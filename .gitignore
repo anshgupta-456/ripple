@@ -8,3 +8,4 @@ frontend/dist/
 data/ground_truth/*.yaml
 data/*.sqlite
 data/*.jsonl
+data/results/bench_dev.json

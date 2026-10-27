@@ -56,6 +56,12 @@ class RankedAction(BaseModel):
     release_p90_h: float | None = None
 
 
+def _delay_cost(release: np.ndarray, p: dict[str, Any]) -> float:
+    """Merchant harm from funds staying stuck, even when a dated deadline is already lost (capped)."""
+    cap = p.get("delay_cap_hours", 168)
+    return float(np.mean(np.minimum(release, cap))) / 24.0 * p.get("delay_w", 0.0)
+
+
 def build_options(tl: Timeline, trace: TraceResult, tools: set[str]) -> list[Option]:
     opts = [Option(id=DO_NOTHING, label="Do nothing, reply and monitor", steps=[], tier=int(Tier.AGENT_ALONE))]
     has_supplier = bool(tl.val("supplier.supplier_id")) and "send_supplier_notice" in tools
@@ -105,6 +111,7 @@ def rank(
     notice_mit = p["supplier_notice"]["accept_prob"] * p["supplier_notice"]["harm_reduction_if_accepted"]
     base_release = release_hours(tl, trace, False, nz, p)
     base_harm = (p_miss(base_release, due_hours) * harm_weight) if obligation_present else 0.0
+    base_harm += _delay_cost(base_release, p)
 
     out: list[RankedAction] = []
     for o in build_options(tl, trace, tools):
@@ -116,7 +123,7 @@ def rank(
         p50 = round(float(np.percentile(fin, 50)), 1) if len(fin) >= 0.5 * len(rel) else None
         p90 = round(float(np.percentile(fin, 90)), 1) if len(fin) >= 0.9 * len(rel) else None
         mit = notice_mit if "send_supplier_notice" in o.steps else 0.0
-        harm = pm * harm_weight * (1 - mit)
+        harm = pm * harm_weight * (1 - mit) + _delay_cost(rel, p)
         cost = sum(p["action_costs"].get(s, 0.0) for s in o.steps)
         risk = p["risk_penalty_by_tier"].get(o.tier, 0.0) if o.steps else 0.0
         score = base_harm - harm - cost - risk

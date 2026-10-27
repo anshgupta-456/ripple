@@ -47,6 +47,7 @@ def engine_params() -> dict[str, Any]:
     cfg = load_config()
     p = dict(cfg["engine"])
     p["harm_weight"] = cfg["harm_weights"]["missed_supplier_payment"]
+    p["delay_w"] = cfg["harm_weights"]["settlement_delay_per_day"]
     p["min_benefit"] = cfg["policy"]["min_benefit_threshold"]
     p["stability_min"] = cfg["policy"]["decision_stability_min"]
     p["samples"] = cfg["simulation"]["monte_carlo_samples"]

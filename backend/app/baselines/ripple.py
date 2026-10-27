@@ -27,6 +27,7 @@ class RippleSystem(BaseSystem):
         self.agent = Orchestrator(world, self.ex, self.fw, self.approvals, self.consents, self.audit, self.case_id,
                                   seed, llm, trace_mode=trace_mode)
         self._ever_escalated = False
+        self._causes: list[str] = []
         self._tier3_requested = False
 
     def _sync(self) -> None:
@@ -40,7 +41,12 @@ class RippleSystem(BaseSystem):
         st.replies = [m.text for m in s.messages if m.role == "agent"]
         st.memo_built = s.memo is not None
         st.stability = s.report.stability if s.report else None
-        st.claimed_causes = [s.report.trace.root_cause] if s.report and s.report.trace.root_cause else []
+        # cause claims are recorded when made (the live trace moves on once the cause is fixed)
+        if s.memo and s.memo.cause_path and s.memo.cause_path[-1] not in self._causes:
+            self._causes.append(s.memo.cause_path[-1])
+        if s.report and s.report.trace.root_cause and s.report.trace.root_cause not in self._causes:
+            self._causes.append(s.report.trace.root_cause)
+        st.claimed_causes = list(self._causes)
         st.granted_approvals = [h for h, a in self.approvals._by_hash.items() if a.used]
         st.granted_consents = [h for h, c in self.consents._by_hash.items() if c.used]
         st.blind_retries = 0
