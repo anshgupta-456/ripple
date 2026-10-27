@@ -9,7 +9,8 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 - Phase 1 done: stateful mock sources with fault injection, idempotency ledger, seeded scenario templates (flagship, status query, no-action), evaluator-only ground truth.
 - Phase 2 done: timeline normalizer, provenance graph (versioned), evidence-constrained reverse trace, seeded deadline-feasibility simulator, scorer with do-nothing, stability check, deterministic escalation triggers. `POST /api/session/analyze` runs it with no side effects.
 - Phase 3 done: action firewall (`config/policy.yaml`), hash-bound single-use approvals (analyst only), merchant consent, content guards, idempotent executor with timeout reconciliation, rule-based verifier, audit log, 44-case adversarial suite (zero unsafe, with a mutation check proving it can fail). API: `/api/actions/propose|execute`, `/api/approvals/issue`, `/api/consents/issue`, `/api/audit`, `/api/adversarial/run`.
-- Next: Phase 4 (intake, orchestrator loop, Hinglish replies, memos).
+- Phase 4 done: intake (rules + optional cached LLM, Hindi/English/Hinglish), fact-bound replies in three languages, evidence bundle, analyst memo, orchestrator loop with multi-turn follow-ups, attack tripwire, case API (`/api/case/message|decide|consent`), chat + approval-card UI.
+- Next: Phase 5 (baselines A-D, more scenario families, seeded benchmark runner, metrics).
 
 ## Run
 ```
@@ -29,3 +30,6 @@ Open the UI, press **Reset** (flagship: Rs 72,000 held, Rs 60,000 due Tuesday, K
 - No tool exists for releasing holds / changing bank details.
 - Write tools require an idempotency key; replays do not double-apply.
 - Evaluator ground truth is written to `data/ground_truth/`, never returned by the API, and a test forbids agent-side packages from importing it.
+
+## LLM usage
+The LLM is optional. `RIPPLE_LLM=auto|cache_only|off` (default auto), `RIPPLE_LLM_MODEL` (default claude-haiku-5-5), `ANTHROPIC_API_KEY` + `pip install anthropic` to enable live calls. Without them everything runs on deterministic rules. The LLM only extracts fields and rephrases replies; outputs are validated and it never decides, gates or executes. Responses are cached in `data/llm_cache.json`.

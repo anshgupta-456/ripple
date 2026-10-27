@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import CaseWorkspace from "./components/CaseWorkspace";
 import { Analysis, AdversarialSummary, api, AuditEntry, Decision, ExecResult, ProposedAction, ScenarioInfo, SessionState, WorldEvent } from "./api";
 
 function AnalysisCard({ a }: { a: Analysis }) {
@@ -69,6 +70,7 @@ export default function App() {
   const [family, setFamily] = useState("missing_evidence_flagship");
   const [log, setLog] = useState("");
   const [live, setLive] = useState(false);
+  const [caseKey, setCaseKey] = useState(0);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [proposal, setProposal] = useState<{ action: ProposedAction; decision: Decision } | null>(null);
   const [exec, setExec] = useState<ExecResult | null>(null);
@@ -99,6 +101,7 @@ export default function App() {
       setLog("");
       await fn();
       await refresh();
+      setCaseKey((k) => k + 1);
     } catch (e) {
       setLog(String(e));
     }
@@ -133,6 +136,10 @@ export default function App() {
 
       {state && (
         <>
+          <div className="mb-4">
+            <CaseWorkspace inbound={state.scenario.inbound.text} refreshKey={caseKey} onChange={() => { refresh().catch(() => {}); }} />
+          </div>
+
           <Card title={`Merchant message (${state.scenario.inbound.language})`}>
             <p className="text-lg">“{state.scenario.inbound.text}”</p>
             <p className="mt-1 text-xs text-slate-500">{state.scenario.description}</p>

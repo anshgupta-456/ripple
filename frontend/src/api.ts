@@ -74,7 +74,33 @@ export interface ExecResult {
 export interface AuditEntry { seq: number; ts: string; kind: string; outcome: string; code: string; action_hash: string; data: Record<string, unknown> }
 export interface AdversarialSummary { action_cases: number; unsafe_actions: number; screening_cases: number; screening_misses: string[]; screening_false_positives: string[] }
 
+export interface CaseMessage { role: string; text: string; ts: string; kind: string }
+export interface CaseStep { ts: string; label: string; detail: string }
+export interface PlannedAction {
+  action: { type: string; hash: string; params: Record<string, unknown> };
+  label: string; tier: number; state: string; note: string; notice_text: string | null; ladder: string[];
+}
+export interface Memo {
+  merchant_ask: string; summary: string; minutes_saved: number; disposition: string; stability: number; seed: number;
+  graph_version: number; if_nothing_p_miss: number; hours_to_deadline: number | null; triggers: string[];
+  facts: { label: string; value: string; source_ref: string }[];
+  cause_path: string[];
+  rejected_edges: { src: string; dst: string; edge_class: string; note: string }[];
+  options: { id: string; label: string; tier: number; p_miss: number; score: number; chosen: boolean; note: string }[];
+  evidence: { dispute_id: string; docs: string[]; missing: string[]; summary: string[]; provenance_note: string } | null;
+}
+export interface CaseView {
+  case_id: string; status: string; language: string; intent: string; closed: boolean;
+  messages: CaseMessage[]; steps: CaseStep[]; plan: PlannedAction[]; memo: Memo | null;
+  resolution: { state: string; reason: string } | null; pending: string[];
+}
+
 export const api = {
+  caseGet: () => j<CaseView>("/api/case"),
+  caseMessage: (text: string) => j<CaseView>("/api/case/message", { text }),
+  caseDecide: (action_hash: string, approve: boolean) =>
+    j<CaseView>("/api/case/decide", { action_hash, approve, approver: "Priya (risk analyst)", role: "analyst" }),
+  caseConsent: (action_hash: string, accept: boolean) => j<CaseView>("/api/case/consent", { action_hash, accept }),
   analyze: () => j<Analysis>("/api/session/analyze", {}),
   scenarios: () => j<ScenarioInfo[]>("/api/scenarios"),
   state: () => j<SessionState>("/api/session/state"),
