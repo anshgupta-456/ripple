@@ -39,7 +39,7 @@ def _edge_dict(g: nx.DiGraph, u: str, v: str) -> dict[str, Any]:
     return {"src": u, "dst": v, "edge_class": a["edge_class"].value, "provenance": a["provenance"], "note": a["note"]}
 
 
-def reverse_trace(g: nx.DiGraph, obligation_id: str | None) -> TraceResult:
+def reverse_trace(g: nx.DiGraph, obligation_id: str | None, max_hops: int | None = None) -> TraceResult:
     if obligation_id is None or obligation_id not in g:
         return TraceResult(obligation_id=obligation_id, status=TraceStatus.NO_BLOCKER)
 
@@ -50,7 +50,7 @@ def reverse_trace(g: nx.DiGraph, obligation_id: str | None) -> TraceResult:
         ins = sorted(g.in_edges(cur), key=lambda e: e[0])
         walk = [(u, v) for u, v in ins if g.edges[u, v]["edge_class"] in WALKABLE and u not in seen]
         rejected += [_edge_dict(g, u, v) for u, v in ins if g.edges[u, v]["edge_class"] not in WALKABLE]
-        if not walk:
+        if not walk or (max_hops is not None and len(edges) >= max_hops):
             break
         u, v = walk[0]
         path.append(u)

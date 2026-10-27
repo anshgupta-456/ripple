@@ -88,10 +88,10 @@ RULES: list[tuple[str, re.Pattern[str]]] = [
     ("consent_yes", P(r"^\s*(haan|han|ha|yes|yep|ok|okay|theek hai|thik hai|bhej do|send it|go ahead|kar do|हाँ|हां)\b")),
     ("followup_supplier", P(r"(supplier|vendor|सप्लायर).{0,25}(bata|batao|inform|message|notice|bhej|tell)|(tell|inform|notify|message).{0,15}(the )?(supplier|vendor)")),
     ("followup_eta", P(r"(kitna|kitne)\s+(time|der|din|samay)|kab tak|how long|\beta\b|when (will|should)|कितना समय|कितने दिन")),
+    ("refund_status", P(r"refund|रिफंड|paise wapas|wapas nahi")),
     ("settlement_issue", P(r"(kyun|kyu|kyon|why|क्यों).{0,30}(ruk|rok|hold|stuck|nahi|not|delay)|ruka (hua|hai|huya)|on hold|\bhold\b|stuck|रुका|रोक")),
     ("settlement_status", P(r"settlement|सेटलमेंट|payout|kab aayega|kab aaega|kab milega|where is my")),
     ("kyc_status", P(r"\bkyc\b|केवाईसी")),
-    ("refund_status", P(r"refund|रिफंड|paise wapas|wapas nahi")),
 ]
 
 

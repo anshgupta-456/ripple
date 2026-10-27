@@ -72,10 +72,12 @@ class CaseState(BaseModel):
 
 class Orchestrator:
     def __init__(self, world: World, executor: Executor, firewall: Firewall, approvals: ApprovalStore,
-                 consents: ConsentStore, audit: AuditLog, case_id: str, seed: int, llm: LLM | None = None):
+                 consents: ConsentStore, audit: AuditLog, case_id: str, seed: int, llm: LLM | None = None,
+                 trace_mode: str = "reverse"):
         self.w, self.ex, self.fw = world, executor, firewall
         self.approvals, self.consents, self.audit = approvals, consents, audit
         self.seed, self.llm = seed, llm
+        self.trace_mode = trace_mode
         self.cfg = load_config()
         self.s = CaseState(case_id=case_id, language=world.spec.language)
         self._prev_graph: GraphSnapshot | None = None
@@ -124,7 +126,12 @@ class Orchestrator:
     # ------------------------------------------------------------------ entry points
     def handle_message(self, text: str) -> CaseState:
         s = self.s
+        prev = next((m for m in reversed(s.messages) if m.role == "merchant"), None)
         s.messages.append(Message(role="merchant", text=text, ts=self._now()))
+        if (prev and " ".join(prev.text.lower().split()) == " ".join(text.lower().split()) and s.last_intake
+                and s.last_intake.intent in ("settlement_status", "settlement_issue", "refund_status", "kyc_status")):
+            self._step("Duplicate message ignored", "identical to the previous message; no new action")
+            return s
         intake = extract(text, self.llm, self.cfg["policy"]["extraction_confidence_min"])
         s.last_intake, s.intent, s.language = intake, intake.intent, intake.language
         self._step("Understood message", f"intent={intake.intent} language={intake.language} confidence={intake.confidence} via {intake.source}")
@@ -148,7 +155,7 @@ class Orchestrator:
         if intake.intent == "kyc_status":
             return self._kyc()
         if intake.intent == "refund_status":
-            return self._escalate("No refund system is connected in this build; handing to a human", text)
+            return self._refund()
         self._claim = any(p.confidence >= 0.5 for p in intake.promises) or self._claim
         return self._settlement_case(intake, text)
 
@@ -217,10 +224,29 @@ class Orchestrator:
             self.s.closed = True
         return self.s
 
+    def _refund(self) -> CaseState:
+        if "read_refund" not in self.w.tools:
+            return self._escalate("no refund on record for this merchant", "")
+        r = self._read("read_refund")
+        words = {"processing": {"english": "still processing", "hinglish": "abhi process ho raha hai", "hindi": "अभी प्रोसेस हो रहा है"},
+                 "completed": {"english": "completed", "hinglish": "complete ho chuka hai", "hindi": "पूरा हो चुका है"}}
+        eta_part = ""
+        if r["status"] == "processing" and r.get("expected_by"):
+            eta_part = {"english": f", expected by {fmt_dt(r['expected_by'])}",
+                        "hinglish": f", {fmt_dt(r['expected_by'])} tak aane ki ummeed hai",
+                        "hindi": f", {fmt_dt(r['expected_by'])} तक आने की उम्मीद है"}[self.s.language]
+        res = self._say("refund_status", amount=inr(r["amount"]), status_word=words[r["status"]][self.s.language],
+                        eta_part=eta_part)
+        if res and res.verified:
+            self._step("Closed without human", f"refund reply matches source status {r['status']}")
+            self._set_status(CaseStatus.AUTO_RESOLVED)
+            self.s.closed = True
+        return self.s
+
     def _settlement_case(self, intake: IntakeResult, text: str) -> CaseState:
         s = self.s
         tl = self._timeline()
-        report = decide(tl, set(self.w.tools), self.seed, self._prev_graph)
+        report = decide(tl, set(self.w.tools), self.seed, self._prev_graph, trace_mode=self.trace_mode)
         self._prev_graph, s.report = report.graph, report
         self._step("Traced cause", " ← ".join(report.trace.path) or "no blocker")
         for e in report.trace.rejected_edges:
@@ -228,6 +254,11 @@ class Orchestrator:
         self._step("Ranked actions", "; ".join(f"{r.id}={r.score:.3f}" for r in report.ranked[:3]))
         status = tl.val("settlement.status")
 
+        only_unreachable = report.disposition == Disposition.ESCALATE and set(report.triggers) <= {"deadline_unreachable", "tier3_action_needed"} \
+            and bool(report.chosen.steps)
+        if only_unreachable:
+            self._step("Deadline cannot be met", "recommending an honest supplier notice and fixing the cause; no promise made")
+            return self._propose_plan(intake, text, tl, report, list(report.chosen.steps))
         if report.disposition == Disposition.ESCALATE:
             s.memo = build_memo(intake, text, tl, report, compile_bundle(tl), [])
             return self._escalate("; ".join(report.triggers) or "engine escalation", text)
@@ -400,7 +431,7 @@ class Orchestrator:
     # ------------------------------------------------------------------ follow-ups
     def _eta_reply(self, waiting: bool) -> None:
         tl = self._timeline()
-        report = decide(tl, set(self.w.tools), self.seed, self._prev_graph)
+        report = decide(tl, set(self.w.tools), self.seed, self._prev_graph, trace_mode=self.trace_mode)
         self._prev_graph, self.s.report = report.graph, report
         nl = ""
         pend = next((p for p in self.s.plan if p.state == "awaiting_consent"), None)
@@ -421,7 +452,7 @@ class Orchestrator:
             return s
         if any(p.state == "awaiting_approval" for p in s.plan):
             tl = self._timeline()
-            report = decide(tl, set(self.w.tools), self.seed, self._prev_graph)
+            report = decide(tl, set(self.w.tools), self.seed, self._prev_graph, trace_mode=self.trace_mode)
             best = next((r for r in report.ranked if r.id.startswith("SUBMIT_DISPUTE_EVIDENCE")), None)
             h = best.release_p50_h if best and best.release_p50_h else None
             if h is not None:

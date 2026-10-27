@@ -22,6 +22,8 @@ from app.llm.client import LLM
     ("nahi", "consent_no", "hinglish"),
     ("what is my KYC status", "kyc_status", "english"),
     ("my refund has not arrived", "refund_status", "english"),
+    ("mera refund kab aayega?", "refund_status", "hinglish"),
+    ("customer ka refund abhi tak nahi gaya, status batao", "refund_status", "hinglish"),
     ("hello", "other", "english"),
 ])
 def test_rules_intent_and_language(text, intent, lang):

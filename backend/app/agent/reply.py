@@ -40,6 +40,11 @@ T: dict[str, dict[str, str]] = {
         "hinglish": "Aapka evidence submit ho gaya hai aur risk review me hai. Andaza (promise nahi): abhi se lagbhag {eta_h} ghante. {notice_line}",
         "hindi": "आपका सबूत जमा हो गया है और रिस्क रिव्यू में है। अनुमान (वादा नहीं): अभी से लगभग {eta_h} घंटे। {notice_line}",
     },
+    "refund_status": {
+        "english": "Your refund of {amount} is {status_word}{eta_part}.",
+        "hinglish": "Aapka {amount} ka refund {status_word}{eta_part}.",
+        "hindi": "आपका {amount} का रिफंड {status_word}{eta_part}।",
+    },
     "eta_pending": {
         "english": "Your evidence is waiting for analyst approval. If approved now, release usually takes about {eta_h} hours after submission (an estimate, not a promise).",
         "hinglish": "Aapka evidence analyst ki approval ka intezaar kar raha hai. Abhi approve ho to submission ke baad release me aam taur par lagbhag {eta_h} ghante lagte hain (andaza, promise nahi).",

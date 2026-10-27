@@ -25,7 +25,7 @@ def flagship_tl():
 def test_every_template_exists_in_all_languages_and_formats():
     ctx = dict(amount="Rs 72,000", held="Rs 72,000", eta="Tue 03 Nov, 12:00", eta_h=27, extra="", notice_line="",
                due_amt="Rs 60,000", due_day="Tue 03 Nov", supplier="Anand Wholesale", text="Late by a day.",
-               kyc_status="expiring", kyc_exp=" (Wed)", kyc_extra="")
+               kyc_status="expiring", kyc_exp=" (Wed)", kyc_extra="", status_word="processing", eta_part=", soon")
     for kind, langs in T.items():
         assert set(langs) == set(LANGS), kind
         for lang in LANGS:
