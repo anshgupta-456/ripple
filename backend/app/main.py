@@ -31,6 +31,7 @@ from app.security.audit_security import get_security_log, security_event
 from app.security.auth import PERMS, PERSONAS, AuthError, User, current_user, describe_env, issue_dev_token, require
 from app.security.governance import KILL, LIMITER
 from app.security.redact import redact_obj
+from app.security.backends import configure_from_env
 from app.security.secret_store import install_log_scrubber
 from app.security.settings import data_dir, is_dev, retention_days
 
@@ -39,6 +40,7 @@ app = FastAPI(title="RIPPLE", version="0.7.0", docs_url=None if not is_dev() els
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"] if is_dev() else [], allow_methods=["GET", "POST", "DELETE"],
                    allow_headers=["Authorization", "Content-Type"])
 install_log_scrubber()
+configure_from_env()      # RIPPLE_SECRETS_BACKEND=vault|aws; a misconfigured backend stops the app from starting (fail closed)
 
 
 @app.middleware("http")
