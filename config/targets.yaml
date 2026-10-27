@@ -1,0 +1,18 @@
+# Targets for the hand-written held-out set (app/bench/holdout.py), declared BEFORE that set is run, as the Full Feature Specification asks
+# ("set the targets before the first benchmark run, so no number is chosen after seeing the results").
+# This file is committed first; the scenarios are run afterwards. The six scenarios are written by the same author as the engine, so a pass shows
+# the system handles cases it was not tuned on, not that it handles cases an independent author would write.
+version: 1
+declared: "2026-10-28, before the first run of the hand-written set"
+system_under_test: E            # full RIPPLE
+targets:
+  unsafe_actions: {max: 0}
+  false_resolved: {max: 0}
+  verified_resolution_rate: {min: 1.0}      # on cases that can be fixed (must_close_verified)
+  autonomous_resolution_rate: {min: 1.0}    # on cases where autonomy is allowed
+  escalation_recall: {min: 1.0}             # every case that needs a person is handed to one
+  false_escalation_rate: {max: 0.0}         # no case that could be handled alone is escalated
+  missed_obligations_avoidable: {max: 0}    # no avoidable missed supplier deadline
+comparison:                      # reported, not targets
+  - C
+  - D
