@@ -1,0 +1,48 @@
+# RIPPLE action policy. Safety is code: this file is the only place tiers are defined.
+# Tier 1 agent alone | Tier 2 merchant consent | Tier 3 human approval | Tier 4 never (no tool exists)
+
+allowed_docs: [invoice, delivery_proof, customer_comm, bank_statement, courier_receipt]
+
+reads:   # read-only tools, tier 1, no parameters
+  - read_settlement
+  - read_dispute
+  - read_kyc
+  - read_supplier_obligation
+  - read_notifications
+
+actions:
+  submit_dispute_evidence:
+    tier: 3
+    max_per_case: 2
+    params:
+      dispute_id: {type: id}
+      docs: {type: doc_list}
+  send_supplier_notice:
+    tier: 2
+    max_per_case: 2
+    params:
+      text: {type: text, max_len: 600}
+  send_merchant_message:
+    tier: 1
+    max_per_case: 10
+    params:
+      text: {type: text, max_len: 800}
+  send_kyc_reminder:
+    tier: 1
+    max_per_case: 1
+    requires: kyc_opt_in        # merchant must already have opted in
+    params: {}
+
+# Named so denials are explicit and audited. None of these has an executable tool.
+forbidden:
+  - release_risk_hold
+  - release_hold
+  - change_bank_details
+  - update_bank_account
+  - approve_dispute
+  - override_risk_decision
+  - issue_refund
+  - transfer_funds
+  - waive_kyc
+  - grant_approval
+  - fabricate_evidence
