@@ -18,6 +18,7 @@ class AuditEntry(BaseModel):
     outcome: str = ""                 # allow | deny | ok | timeout | ...
     code: str = ""
     data: dict[str, Any] = Field(default_factory=dict)
+    gseq: int = 0
 
 
 class AuditLog:
@@ -30,7 +31,8 @@ class AuditLog:
 
     def add(self, ts: datetime, kind: str, *, case_id: str = "", action_hash: str = "", outcome: str = "",
             code: str = "", **data: Any) -> AuditEntry:
-        e = AuditEntry(seq=len(self.entries) + 1, ts=ts, kind=kind, case_id=case_id, action_hash=action_hash,
+        from app.audit.trace import next_seq
+        e = AuditEntry(gseq=next_seq(), seq=len(self.entries) + 1, ts=ts, kind=kind, case_id=case_id, action_hash=action_hash,
                        outcome=outcome, code=code, data=data)
         self.entries.append(e)
         if self.path:

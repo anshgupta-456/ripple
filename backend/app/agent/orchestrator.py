@@ -13,6 +13,7 @@ from app.agent.evidence import EvidenceBundle, compile_bundle
 from app.agent.memo import AnalystMemo, build_memo
 from app.agent.reply import ReplyDraft, compose, fmt_dt, inr, notice_line, polish
 from app.audit.log import AuditLog
+from app.audit.trace import next_seq
 from app.config import load_config
 from app.engine.decide import DecisionReport, Disposition, decide
 from app.engine.scorer import DO_NOTHING
@@ -35,12 +36,14 @@ class Message(BaseModel):
     text: str
     ts: str
     kind: str = ""
+    gseq: int = 0
 
 
 class Step(BaseModel):
     ts: str
     label: str
     detail: str = ""
+    gseq: int = 0
 
 
 class PlannedAction(BaseModel):
@@ -88,7 +91,7 @@ class Orchestrator:
         return self.w.now.isoformat()
 
     def _step(self, label: str, detail: str = "") -> None:
-        self.s.steps.append(Step(ts=self._now(), label=label, detail=detail))
+        self.s.steps.append(Step(ts=self._now(), label=label, detail=detail, gseq=next_seq()))
 
     def _ctx(self) -> FirewallContext:
         w = self.w
@@ -115,7 +118,7 @@ class Orchestrator:
         a = Action(case_id=self.s.case_id, type="send_merchant_message", params={"text": draft.text})
         res = self.ex.execute(a, self._ctx())
         if res.outcome == "executed" and res.verified:
-            self.s.messages.append(Message(role="agent", text=draft.text, ts=self._now(), kind=kind))
+            self.s.messages.append(Message(role="agent", text=draft.text, ts=self._now(), kind=kind, gseq=next_seq()))
         else:
             self._step("Reply blocked or unverified", f"{kind}: {res.firewall.code} / {res.outcome}")
         return res
@@ -127,7 +130,7 @@ class Orchestrator:
     def handle_message(self, text: str) -> CaseState:
         s = self.s
         prev = next((m for m in reversed(s.messages) if m.role == "merchant"), None)
-        s.messages.append(Message(role="merchant", text=text, ts=self._now()))
+        s.messages.append(Message(role="merchant", text=text, ts=self._now(), gseq=next_seq()))
         if (prev and " ".join(prev.text.lower().split()) == " ".join(text.lower().split()) and s.last_intake
                 and s.last_intake.intent in ("settlement_status", "settlement_issue", "refund_status", "kyc_status")):
             self._step("Duplicate message ignored", "identical to the previous message; no new action")

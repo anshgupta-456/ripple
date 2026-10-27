@@ -53,19 +53,19 @@ def _steps(key: str, rec: RunRecord, w: LoggedWorld, sys_, scn) -> list[dict[str
     out: list[tuple[str, int, dict[str, Any]]] = []
     n = 0
 
-    def add(ts: str, actor: str, text: str, flag: str = "") -> None:
+    def add(ts: str, actor: str, text: str, flag: str = "", g: int | None = None) -> None:
         nonlocal n
         n += 1
-        out.append((ts, n, {"t": ts, "actor": actor, "text": text, "flag": flag}))
+        out.append((ts, g if g is not None else 10**9 + n, {"t": ts, "actor": actor, "text": text, "flag": flag}))
 
     t0 = scn.world_spec.start.isoformat()
-    add(t0, "merchant", scn.inbound.text)
+    add(t0, "merchant", scn.inbound.text, "", 0)
     for f in scn.followups:
-        add(t0, "merchant", f)
+        add(t0, "merchant", f, "", 0)
 
     reads = [c for c in w.calls if not c["write"]]
     if key == "C" and reads:
-        add(t0, "tool", f"read {len(reads)} source fields (settlement, dispute, KYC, supplier)", "ok")
+        add(t0, "tool", f"read {len(reads)} source fields (settlement, dispute, KYC, supplier)", "ok", min(c["gseq"] for c in reads))
 
     granted_a, granted_c = set(st.granted_approvals), set(st.granted_consents)
     for c in w.calls:
@@ -75,7 +75,7 @@ def _steps(key: str, rec: RunRecord, w: LoggedWorld, sys_, scn) -> list[dict[str
         kinds = [v["kind"] for v in viol]
         if c["tool"] == "send_merchant_message":
             if key == "C":
-                add(c["at"], "agent", c["params"].get("text", ""), "")
+                add(c["at"], "agent", c["params"].get("text", ""), "", c["gseq"])
             continue
         label = {"tier3_without_approval": "NO APPROVAL", "tier2_without_consent": "NO CONSENT",
                  "kyc_reminder_without_opt_in": "NO OPT-IN", "forbidden_attempt": "FORBIDDEN TOOL",
@@ -86,29 +86,29 @@ def _steps(key: str, rec: RunRecord, w: LoggedWorld, sys_, scn) -> list[dict[str
             args = f"({len(c['params']['docs'])} docs)"
         outcome = {"ok": "ok", "timeout": "TIMEOUT", "unknown_tool": "no such tool", "source_error": f"source error: {c.get('error')}",
                    "missing_key": "rejected"}.get(c["outcome"], c["outcome"])
-        add(c["at"], "tool", f"{c['tool']}{args} → {outcome}" + (f"   [{tag}]" if tag else ""), _flag_for(kinds))
+        add(c["at"], "tool", f"{c['tool']}{args} → {outcome}" + (f"   [{tag}]" if tag else ""), _flag_for(kinds), c["gseq"])
 
     if key in ("D", "E"):
         for s in sys_.agent.s.steps:
             add(s.ts, "human" if s.label.startswith(("Analyst", "Merchant consented")) else "agent",
-                s.label + (f": {s.detail}" if s.detail else ""), "")
+                s.label + (f": {s.detail}" if s.detail else ""), "", s.gseq)
         for m in sys_.agent.s.messages:
             if m.role == "agent":
-                add(m.ts, "agent", m.text, "")
+                add(m.ts, "agent", m.text, "", m.gseq)
         for e in sys_.audit.entries:
             at = e.data.get("action_type", "")
             if e.kind == "firewall" and e.outcome == "deny" and not at.startswith("read_"):
-                add(e.ts.isoformat(), "firewall", f"BLOCKED {at or 'action'}: {e.code}", "block")
+                add(e.ts.isoformat(), "firewall", f"BLOCKED {at or 'action'}: {e.code}", "block", e.gseq)
             elif e.kind == "reconcile":
-                add(e.ts.isoformat(), "firewall", f"timeout reconciled by idempotency key: {e.outcome} (no blind retry)", "ok")
-            elif e.kind == "verification" and e.outcome:
+                add(e.ts.isoformat(), "firewall", f"timeout reconciled by idempotency key: {e.outcome} (no blind retry)", "ok", e.gseq)
+            elif e.kind == "verification" and e.outcome and "notification log" not in str(e.data.get("reason", "")):
                 add(e.ts.isoformat(), "verifier", f"re-read source: action {e.outcome} ({e.data.get('reason', '')})",
-                    "ok" if e.outcome == "verified" else "bad")
+                    "ok" if e.outcome == "verified" else "bad", e.gseq)
 
     for ev in w.events:
         if ev.type in ("evidence_submitted", "under_review", "dispute_won", "dispute_lost", "hold_cleared", "released",
                        "refund_completed", "notice_sent", "reminder_sent"):
-            add(ev.ts.isoformat(), "source", f"{ev.source.value}.{ev.type}", "ok")
+            add(ev.ts.isoformat(), "source", f"{ev.source.value}.{ev.type}", "ok", w.event_gseq.get(ev.id))
 
     out.sort(key=lambda x: (x[0], x[1]))
     return [o[2] for o in out][:80]
@@ -118,7 +118,9 @@ def _verdict(rec: RunRecord, w: LoggedWorld, sys_, scn) -> dict[str, Any]:
     st = sys_.state()
     settle, disp = w.call("read_settlement"), (w.call("read_dispute") if "read_dispute" in w.tools else None)
     if rec.false_resolved:
-        headline = f"Declared the case resolved, but the source says settlement is {settle['status']}"
+        rel = [e.ts for e in w.events if e.type == "released"]
+        later = f"; the source only showed it released at {min(rel).strftime('%a %H:%M')}" if rel else f"; the settlement is still {settle['status']}"
+        headline = f"Declared the case resolved at {st.closed_at[11:16] if st.closed_at else '?'} with no proof{later}"
     elif rec.verified_close:
         headline = "Resolved and verified at the source"
     elif rec.injection_complied:

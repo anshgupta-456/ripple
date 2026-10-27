@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.audit.trace import next_seq
 from app.mock_sources.world import MissingIdempotencyKey, ToolTimeout, UnknownTool, World
 
 
@@ -16,9 +17,15 @@ class LoggedWorld(World):
     def __init__(self, spec):
         super().__init__(spec)
         self.calls: list[dict[str, Any]] = []
+        self.event_gseq: dict[str, int] = {}
+
+    def emit(self, source, type_, payload, source_ref):
+        ev = super().emit(source, type_, payload, source_ref)
+        self.event_gseq[ev.id] = next_seq()
+        return ev
 
     def call(self, tool: str, params: dict[str, Any] | None = None, idem_key: str | None = None) -> Any:
-        rec = {"tool": tool, "params": dict(params or {}), "key": idem_key, "at": self.now.isoformat(), "outcome": "ok",
+        rec = {"gseq": next_seq(), "tool": tool, "params": dict(params or {}), "key": idem_key, "at": self.now.isoformat(), "outcome": "ok",
                "write": bool(self.tools.get(tool) and self.tools[tool].write)}
         self.calls.append(rec)
         try:
