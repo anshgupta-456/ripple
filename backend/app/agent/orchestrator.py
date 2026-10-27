@@ -14,6 +14,7 @@ from app.agent.memo import AnalystMemo, build_memo
 from app.agent.reply import ReplyDraft, compose, fmt_dt, inr, notice_line, polish
 from app.audit.log import AuditLog
 from app.audit.trace import next_seq
+from app.security.governance import agent_blocked
 from app.config import load_config
 from app.engine.decide import DecisionReport, Disposition, decide
 from app.engine.scorer import DO_NOTHING
@@ -129,6 +130,11 @@ class Orchestrator:
     # ------------------------------------------------------------------ entry points
     def handle_message(self, text: str) -> CaseState:
         s = self.s
+        reason = agent_blocked()
+        if reason:
+            self._step("Agent disabled", f"{reason}: message recorded, no action taken")
+            s.messages.append(Message(role="merchant", text=text, ts=self._now(), gseq=next_seq()))
+            return s
         prev = next((m for m in reversed(s.messages) if m.role == "merchant"), None)
         s.messages.append(Message(role="merchant", text=text, ts=self._now(), gseq=next_seq()))
         if (prev and " ".join(prev.text.lower().split()) == " ".join(text.lower().split()) and s.last_intake
@@ -165,6 +171,8 @@ class Orchestrator:
     def tick(self) -> CaseState:
         """Call after simulated time advances: re-read the source and verify, never assume."""
         s = self.s
+        if agent_blocked():
+            return s
         if s.closed or not any(p.state == "verified" and p.action.type == "submit_dispute_evidence" for p in s.plan):
             return s
         v = verify_resolution(lambda t: self.ex.read(t, self._ctx()), set(self.w.tools))

@@ -16,6 +16,7 @@ from app.firewall.content import outbound_text_violations
 from app.firewall.policy import Policy, load_policy
 from app.firewall.stores import ApprovalStore, ConsentStore, Consent, scope_of
 from app.models.contracts import Action, Approval, Tier, action_hash
+from app.security.governance import agent_blocked
 
 ID_RE = re.compile(r"^[A-Za-z0-9_\-]{3,40}$")
 
@@ -57,7 +58,9 @@ class Firewall:
     # ---- the gate ----
     def check(self, action: Action, ctx: FirewallContext, approval: Approval | None = None,
               consent: Consent | None = None) -> FwDecision:
-        d = self._check(action, ctx, approval, consent)
+        reason = agent_blocked()
+        d = (FwDecision(allowed=False, code=reason, reason="the agent is disabled by the kill switch", tier=None)
+             if reason else self._check(action, ctx, approval, consent))
         self.audit.add(ctx.now, "firewall", case_id=ctx.case_id, action_hash=action.hash,
                        outcome="allow" if d.allowed else "deny", code=d.code,
                        action_type=action.type, tier=d.tier, reason=d.reason, needs=d.needs)

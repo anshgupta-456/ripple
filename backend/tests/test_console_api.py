@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import SESSIONS, app
+from tests.helpers import ANALYST
 
 c = TestClient(app)
 
@@ -41,7 +42,7 @@ def test_pending_approvals_queue_and_decide_from_it():
     q = c.get("/api/approvals/pending").json()
     assert q and q[0]["memo"] and q[0]["action"]["type"] == "submit_dispute_evidence"
     sid, h = q[0]["sid"], q[0]["action"]["hash"]
-    r = c.post(f"/api/case/decide?sid={sid}", json={"action_hash": h, "approve": True, "approver": "Priya", "role": "analyst"})
+    r = c.post(f"/api/case/decide?sid={sid}", json={"action_hash": h, "approve": True, "approver": "Priya", "role": "analyst"}, headers=ANALYST)
     assert r.status_code == 200
     assert not [x for x in c.get("/api/approvals/pending").json() if x["action"]["hash"] == h]
 
@@ -50,14 +51,14 @@ def test_edit_changes_the_hash_and_old_approval_cannot_be_used():
     seed()
     q = c.get("/api/approvals/pending").json()[0]
     sid, old = q["sid"], q["action"]["hash"]
-    assert c.post(f"/api/case/edit?sid={sid}", json={"action_hash": old, "docs": ["selfie"]}).status_code == 400
-    r = c.post(f"/api/case/edit?sid={sid}", json={"action_hash": old, "docs": ["invoice", "delivery_proof"]})
+    assert c.post(f"/api/case/edit?sid={sid}", json={"action_hash": old, "docs": ["selfie"]}, headers=ANALYST).status_code == 400
+    r = c.post(f"/api/case/edit?sid={sid}", json={"action_hash": old, "docs": ["invoice", "delivery_proof"]}, headers=ANALYST)
     assert r.status_code == 200
     new = next(p for p in r.json()["plan"] if p["action"]["type"] == "submit_dispute_evidence")["action"]["hash"]
     assert new != old
-    assert c.post(f"/api/case/decide?sid={sid}", json={"action_hash": old, "approve": True, "approver": "P", "role": "analyst"}).status_code == 404
+    assert c.post(f"/api/case/decide?sid={sid}", json={"action_hash": old, "approve": True, "approver": "P", "role": "analyst"}, headers=ANALYST).status_code == 404
     # an incomplete bundle is approved but the source rejects it: failed, escalated, never closed
-    out = c.post(f"/api/case/decide?sid={sid}", json={"action_hash": new, "approve": True, "approver": "P", "role": "analyst"}).json()
+    out = c.post(f"/api/case/decide?sid={sid}", json={"action_hash": new, "approve": True, "approver": "P", "role": "analyst"}, headers=ANALYST).json()
     ev = next(p for p in out["plan"] if p["action"]["type"] == "submit_dispute_evidence")
     assert ev["state"] == "failed" and out["status"] == "escalated"
 
@@ -65,7 +66,7 @@ def test_edit_changes_the_hash_and_old_approval_cannot_be_used():
 def test_advance_all_closes_resolvable_cases_only_when_verified():
     seed()
     for q in c.get("/api/approvals/pending").json():
-        c.post(f"/api/case/decide?sid={q['sid']}", json={"action_hash": q["action"]["hash"], "approve": True, "approver": "P", "role": "analyst"})
+        c.post(f"/api/case/decide?sid={q['sid']}", json={"action_hash": q["action"]["hash"], "approve": True}, headers=ANALYST)
     rows = c.post("/api/cases/advance", json={"hours": 30}).json()
     flag = next(r for r in rows if r["family"] == "missing_evidence_flagship")
     assert flag["status"] == "verified" and flag["closed"]
@@ -79,6 +80,11 @@ def test_new_case_with_custom_message_and_attack_text():
     assert cv["scenario_family"] == "missing_evidence_flagship" and "release" in cv["messages"][-1]["text"].lower()
 
 
-def test_public_config_exposes_modeled_assumptions():
-    cfg = c.get("/api/config/public").json()
-    assert cfg["cost_model"]["manual_minutes_per_case"] > 0 and "SYNTHETIC" in cfg["banner"]
+def test_public_config_is_minimal_and_assumptions_need_auth():
+    from fastapi.testclient import TestClient
+    anon = TestClient(app)
+    anon.headers.pop("Authorization")
+    pub = anon.get("/api/config/public").json()
+    assert "SYNTHETIC" in pub["banner"] and "cost_model" not in pub
+    assert anon.get("/api/config/assumptions").status_code == 401
+    assert c.get("/api/config/assumptions").json()["cost_model"]["manual_minutes_per_case"] > 0

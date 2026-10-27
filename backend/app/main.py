@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import asyncio
-import contextvars
 import json
+import time
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.agent.orchestrator import Orchestrator
@@ -27,57 +27,53 @@ from app.firewall.stores import ApprovalStore, ConsentStore
 from app.llm.client import LLM
 from app.mock_sources.world import FAULT_MODES
 from app.models.contracts import Action, CaseStatus
+from app.security.audit_security import get_security_log, security_event
+from app.security.auth import PERMS, PERSONAS, AuthError, User, current_user, describe_env, issue_dev_token, require
+from app.security.governance import KILL, LIMITER
+from app.security.redact import redact_obj
+from app.security.secret_store import install_log_scrubber
+from app.security.settings import data_dir, is_dev, retention_days
 
-app = FastAPI(title="RIPPLE", version="0.6.0")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
-
-_SID: contextvars.ContextVar[str | None] = contextvars.ContextVar("sid", default=None)
-
-
-class SidMiddleware:
-    """Pure ASGI middleware: `?sid=<id>` selects which case/session every endpoint operates on."""
-
-    def __init__(self, app_):
-        self.app = app_
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            qs = parse_qs(scope.get("query_string", b"").decode())
-            tok = _SID.set((qs.get("sid") or [None])[0])
-            try:
-                await self.app(scope, receive, send)
-            finally:
-                _SID.reset(tok)
-        else:
-            await self.app(scope, receive, send)
+app = FastAPI(title="RIPPLE", version="0.7.0", docs_url=None if not is_dev() else "/docs", redoc_url=None)
+# Same-origin in production; the Vite dev server origin is allowed only in dev. Credentials are bearer tokens, not cookies.
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"] if is_dev() else [], allow_methods=["GET", "POST", "DELETE"],
+                   allow_headers=["Authorization", "Content-Type"])
+install_log_scrubber()
 
 
-app.add_middleware(SidMiddleware)
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault("Cache-Control", "no-store")            # case data must not sit in shared caches
+    return resp
 
 
+# ------------------------------------------------------------------ sessions (one case each), scoped by tenant
 class Session:
-    def __init__(self, scenario: Scenario):
+    def __init__(self, scenario: Scenario, tenant: str = "demo", creator: str = "system"):
         self.id = uuid.uuid4().hex[:8]
-        self.scenario = scenario
+        self.scenario, self.tenant, self.creator = scenario, tenant, creator
+        self.created = time.time()
         self.world = LoggedWorld(scenario.world_spec)      # tool-layer call log feeds the live unsafe-action audit
         for tool, mode in scenario.ground_truth.get("harness", {}).get("faults", []):   # environment faults (demo harness)
             self.world.inject_fault(tool, mode)
         self.last_graph = None
         self.case_id = f"C-{self.id}"
-        self.audit = AuditLog(ROOT / "data" / f"audit_{self.id}.jsonl")
+        self.audit_path = data_dir() / f"audit_{self.id}.jsonl"
+        self.audit = AuditLog(self.audit_path)
         self.approvals = ApprovalStore(load_config()["policy"]["approval_expiry_minutes"])
         self.consents = ConsentStore()
         self.firewall = Firewall(self.approvals, self.consents, self.audit)
         self.executor = Executor(self.world, self.firewall, self.audit, self.approvals, self.consents)
-        self.proposals: dict[str, Action] = {}
         self.agent = Orchestrator(self.world, self.executor, self.firewall, self.approvals, self.consents, self.audit,
                                   self.case_id, scenario.seed, LLM())
 
-    def ctx(self) -> FirewallContext:
-        w = self.world
-        ids = {"dispute_id": {w.spec.dispute.dispute_id}} if w.spec.dispute else {}
-        return FirewallContext(case_id=self.case_id, merchant_id=w.spec.merchant_id, now=w.now,
-                               allowed_ids=ids, kyc_opted_in=w.kyc.spec.opted_in_reminders)
+    @property
+    def merchant_id(self) -> str:
+        return self.world.spec.merchant_id
 
     def unsafe(self) -> list[dict[str, str]]:
         return audit_calls(self.world.calls, self.case_id,
@@ -85,26 +81,69 @@ class Session:
                            {h for h, c in self.consents._by_hash.items() if c.used},
                            self.world.kyc.spec.opted_in_reminders)
 
+    def delete_files(self) -> None:
+        self.audit_path.unlink(missing_ok=True)
+
 
 SESSIONS: dict[str, Session] = {}
-ACTIVE: str | None = None
+ACTIVE: dict[str, str] = {}            # tenant -> most recent session id (convenience default)
 
 
 def _add(s: Session) -> Session:
-    global ACTIVE
     SESSIONS[s.id] = s
-    ACTIVE = s.id
+    ACTIVE[s.tenant] = s.id
     return s
 
 
-def _session() -> Session:
-    sid = _SID.get() or ACTIVE
-    if sid is None:
-        return _add(Session(generate("missing_evidence_flagship", CANONICAL_SEED, canonical=True)))
-    s = SESSIONS.get(sid)
-    if s is None:
-        raise HTTPException(404, f"unknown session {sid}")
+def _visible(user: User, s: Session) -> bool:
+    if s.tenant != user.tenant:                       # tenant isolation: other tenants' cases do not exist for you
+        return False
+    if user.roles <= {"merchant"}:                    # a merchant-only user sees only their own merchant's case
+        return bool(user.merchant_id) and user.merchant_id == s.merchant_id
+    return True
+
+
+def _lookup(user: User, sid: str | None) -> Session:
+    sid = sid or ACTIVE.get(user.tenant)
+    s = SESSIONS.get(sid) if sid else None
+    if s is None or not _visible(user, s):
+        raise HTTPException(404, "no such case")
     return s
+
+
+def case_dep(perm: str, *, limit: tuple[str, int, int] | None = None):
+    base = require(perm, limit=limit)
+
+    async def dep(user: User = Depends(base), sid: str | None = Query(default=None)) -> tuple[User, Session]:
+        return user, _lookup(user, sid)
+
+    return dep
+
+
+def agent_dep(perm: str, *, limit: tuple[str, int, int] | None = None):
+    """Case dependency for anything that makes the agent act: refused while the kill switch is on for this user/globally."""
+    inner = case_dep(perm, limit=limit)
+
+    async def dep(pair: tuple[User, Session] = Depends(inner)) -> tuple[User, Session]:
+        reason = KILL.blocked(pair[0].sub)
+        if reason:
+            security_event("kill_switch_block", pair[0], outcome="deny", code=reason)
+            raise HTTPException(503, f"the agent is disabled ({reason})")
+        return pair
+
+    return dep
+
+
+def demo_dep(perm: str = "demo.control", *, limit: tuple[str, int, int] | None = None):
+    """Simulation controls (seed, advance time, reset, fault injection) exist only in demo mode: 404 in production."""
+    base = require(perm, limit=limit)
+
+    async def dep(user: User = Depends(base)) -> User:
+        if not is_dev():
+            raise HTTPException(404, "not found")
+        return user
+
+    return dep
 
 
 def _public_state(s: Session) -> dict[str, Any]:
@@ -112,7 +151,18 @@ def _public_state(s: Session) -> dict[str, Any]:
             "banner": load_config()["synthetic_data_banner"]}
 
 
-# ------------------------------------------------------------------ bodies
+def _case_view(s: Session, user: User) -> dict[str, Any]:
+    v = s.agent.view() | {"sid": s.id, "sim_now": s.world.now.isoformat(), "scenario_family": s.scenario.family,
+                          "merchant_name": s.world.spec.merchant_name, "unsafe": s.unsafe()}
+    if not user.can("case.pii"):                      # viewers get masked conversation text
+        v["messages"] = redact_obj(v["messages"])
+        if v.get("memo"):
+            v["memo"]["merchant_ask"] = redact_obj(v["memo"]["merchant_ask"])
+            v["memo"]["summary"] = redact_obj(v["memo"]["summary"])
+    return v
+
+
+# ------------------------------------------------------------------ request bodies (no role / approver fields: identity comes from the token)
 class ResetBody(BaseModel):
     family: str = "missing_evidence_flagship"
     seed: int = CANONICAL_SEED
@@ -127,17 +177,6 @@ class AdvanceBody(BaseModel):
     hours: float
 
 
-class ProposeBody(BaseModel):
-    type: str
-    params: dict[str, Any] = {}
-
-
-class GrantBody(BaseModel):
-    action_hash: str
-    approver: str = ""
-    role: str = ""
-
-
 class MessageBody(BaseModel):
     text: str
 
@@ -145,8 +184,6 @@ class MessageBody(BaseModel):
 class DecideBody(BaseModel):
     action_hash: str
     approve: bool
-    approver: str = ""
-    role: str = ""
 
 
 class EditBody(BaseModel):
@@ -159,10 +196,6 @@ class ConsentBody(BaseModel):
     accept: bool
 
 
-class ExecuteBody(BaseModel):
-    action_hash: str
-
-
 class FaultBody(BaseModel):
     tool: str
     mode: str
@@ -173,12 +206,6 @@ class SeedBody(BaseModel):
     send_messages: bool = True
 
 
-class LabBody(BaseModel):
-    preset: str = "flagship"
-    message: str | None = None
-    replay: bool = False
-
-
 class NewCaseBody(BaseModel):
     family: str = "missing_evidence_flagship"
     seed: int = CANONICAL_SEED
@@ -186,14 +213,65 @@ class NewCaseBody(BaseModel):
     text: str | None = None
 
 
-# ------------------------------------------------------------------ basics
+class LabBody(BaseModel):
+    preset: str = "flagship"
+    message: str | None = None
+    replay: bool = False
+
+
+class DevLoginBody(BaseModel):
+    persona: str
+
+
+class KillBody(BaseModel):
+    scope: str            # global | user
+    target: str = ""      # user sub when scope == user
+    on: bool
+
+
+# ------------------------------------------------------------------ public + auth
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "config_version": load_config()["version"]}
+    return {"ok": True}
 
 
 @app.get("/api/config/public")
 def public_config() -> dict[str, Any]:
+    c = load_config()
+    return {"banner": c["synthetic_data_banner"], "auth": describe_env()}
+
+
+@app.post("/api/auth/dev-login")
+def dev_login(body: DevLoginBody, request: Request) -> dict[str, Any]:
+    """Demo-only persona login (RIPPLE_ENV=dev). Mints a 15-minute token; in production this route does not exist."""
+    if not is_dev():
+        raise HTTPException(404, "not found")
+    ip = request.client.host if request.client else "?"
+    if not LIMITER.allow("dev-login", ip, 20, 60):
+        raise HTTPException(429, "rate limit exceeded")
+    try:
+        tok, user = issue_dev_token(body.persona)
+    except AuthError as e:
+        raise HTTPException(e.status, e.detail)
+    security_event("login", user, outcome="ok", code="dev_persona")
+    return {"token": tok, "expires_at": user.exp, "user": {"sub": user.sub, "name": user.name, "roles": sorted(user.roles)}}
+
+
+@app.get("/api/auth/personas")
+def personas() -> list[dict[str, Any]]:
+    if not is_dev():
+        raise HTTPException(404, "not found")
+    return [{"id": k, "name": v[0], "roles": sorted(v[1])} for k, v in PERSONAS.items()]
+
+
+@app.get("/api/auth/me")
+async def me(user: User = Depends(current_user)) -> dict[str, Any]:
+    return {"sub": user.sub, "name": user.name, "roles": sorted(user.roles), "tenant": user.tenant, "expires_at": user.exp,
+            "perms": sorted(p for p in PERMS if user.can(p)), "kill_switch": KILL.state()}
+
+
+@app.get("/api/config/assumptions")
+def assumptions(user: User = Depends(require("bench.read"))) -> dict[str, Any]:
     c = load_config()
     return {"version": c["version"], "banner": c["synthetic_data_banner"], "cost_model": c["cost_model"],
             "harm_weights": c["harm_weights"], "policy": c["policy"], "held_out_families": c["benchmark"]["held_out_families"],
@@ -202,206 +280,139 @@ def public_config() -> dict[str, Any]:
 
 
 @app.get("/api/scenarios")
-def scenarios() -> list[dict[str, Any]]:
-    out = []
-    for family in REGISTRY:
-        scn = generate(family, CANONICAL_SEED, canonical=True)
-        out.append({"family": family, "split": scn.split, "description": scn.description})
-    return out
+def scenarios(user: User = Depends(require("console.read"))) -> list[dict[str, Any]]:
+    return [{"family": f, "split": (s := generate(f, CANONICAL_SEED, canonical=True)).split, "description": s.description}
+            for f in REGISTRY]
 
 
-@app.post("/api/session/reset")
-def reset(body: ResetBody) -> dict[str, Any]:
-    try:
-        scn = generate(body.family, body.seed, body.canonical)
-    except KeyError as e:
-        raise HTTPException(404, str(e))
-    write_ground_truth(scn)  # evaluator-only file; never returned by the API
-    old = _SID.get() or ACTIVE
-    if old:
-        SESSIONS.pop(old, None)
-    return _public_state(_add(Session(scn)))
+# ------------------------------------------------------------------ one case
+@app.get("/api/case")
+def case_view(ctx: tuple[User, Session] = Depends(case_dep("case.read"))) -> dict[str, Any]:
+    user, s = ctx
+    return _case_view(s, user)
 
 
 @app.get("/api/session/state")
-def state() -> dict[str, Any]:
-    return _public_state(_session())
+def state(ctx: tuple[User, Session] = Depends(case_dep("case.read"))) -> dict[str, Any]:
+    return _public_state(ctx[1])
 
 
-@app.post("/api/session/advance")
-def advance(body: AdvanceBody) -> dict[str, Any]:
-    s = _session()
-    s.world.advance(body.hours)
-    s.agent.tick()
-    return _public_state(s)
+@app.get("/api/session/events")
+def events(ctx: tuple[User, Session] = Depends(case_dep("case.read"))) -> list[dict[str, Any]]:
+    return [e.model_dump(mode="json") for e in ctx[1].world.events]
 
 
 @app.post("/api/session/analyze")
-def analyze(body: AnalyzeBody) -> dict[str, Any]:
-    """Run the deterministic decision engine on the current world state (no actions taken)."""
-    s = _session()
+def analyze(body: AnalyzeBody, ctx: tuple[User, Session] = Depends(case_dep("case.read"))) -> dict[str, Any]:
+    """Run the deterministic decision engine on the current state. Read-only: it takes no action."""
+    s = ctx[1]
     report = analyze_world(s.world, body.seed, s.last_graph)
     s.last_graph = report.graph
     return report.model_dump(mode="json")
 
 
-@app.get("/api/session/events")
-def events() -> list[dict[str, Any]]:
-    return [e.model_dump(mode="json") for e in _session().world.events]
-
-
-@app.get("/api/session/stream")
-async def stream(request: Request) -> StreamingResponse:
-    sess = _session()
-
-    async def gen():
-        idx = ticks = 0
-        yield f"event: hello\ndata: {json.dumps({'session_id': sess.id})}\n\n"
-        while True:
-            if await request.is_disconnected():
-                return
-            evs = sess.world.events
-            while idx < len(evs):
-                yield f"event: world_event\ndata: {evs[idx].model_dump_json()}\n\n"
-                idx += 1
-            ticks += 1
-            if ticks % 60 == 0:
-                yield ": keepalive\n\n"
-            await asyncio.sleep(0.25)
-
-    return StreamingResponse(gen(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-
-@app.get("/api/dev/tools")
-def dev_tools() -> dict[str, Any]:
-    w = _session().world
-    return {"tools": {n: {"write": t.write} for n, t in w.tools.items()}, "fault_modes": list(FAULT_MODES)}
-
-
-# ------------------------------------------------------------------ action pipeline (every step audited)
-@app.post("/api/actions/propose")
-def propose(body: ProposeBody) -> dict[str, Any]:
-    s = _session()
-    a = Action(case_id=s.case_id, type=body.type, params=body.params)
-    s.proposals[a.hash] = a
-    d = s.firewall.check(a, s.ctx())
-    return {"action": a.model_dump(mode="json"), "decision": d.model_dump()}
-
-
-def _proposal(s: Session, h: str) -> Action:
-    a = s.proposals.get(h)
-    if a is None:
-        raise HTTPException(404, "unknown action_hash: propose it first")
-    return a
-
-
-@app.post("/api/approvals/issue")
-def issue_approval(body: GrantBody) -> dict[str, Any]:
-    s = _session()
-    a = _proposal(s, body.action_hash)
-    try:
-        ap = s.approvals.issue(a, body.approver, body.role, s.world.now)
-    except PermissionError as e:
-        s.audit.add(s.world.now, "approval", case_id=s.case_id, action_hash=a.hash, outcome="deny",
-                    code="issuer_not_authorised", role=body.role, approver=body.approver)
-        raise HTTPException(403, str(e))
-    s.audit.add(s.world.now, "approval", case_id=s.case_id, action_hash=a.hash, outcome="issued",
-                approver=body.approver, expires_at=ap.expires_at.isoformat())
-    return ap.model_dump(mode="json")
-
-
-@app.post("/api/consents/issue")
-def issue_consent(body: GrantBody) -> dict[str, Any]:
-    s = _session()
-    a = _proposal(s, body.action_hash)
-    c = s.consents.issue(a, s.world.spec.merchant_id, s.world.now)
-    s.audit.add(s.world.now, "consent", case_id=s.case_id, action_hash=a.hash, outcome="issued")
-    return c.model_dump(mode="json")
-
-
-@app.post("/api/actions/execute")
-def execute(body: ExecuteBody) -> dict[str, Any]:
-    s = _session()
-    r = s.executor.execute(_proposal(s, body.action_hash), s.ctx())
-    return r.model_dump(mode="json") | {"verified": r.verified}
-
-
-# ------------------------------------------------------------------ the agent (one case per session)
 @app.post("/api/case/message")
-def case_message(body: MessageBody) -> dict[str, Any]:
-    s = _session()
+def case_message(body: MessageBody, ctx: tuple[User, Session] = Depends(agent_dep("case.message", limit=("message", 30, 60)))) -> dict[str, Any]:
+    user, s = ctx
+    if len(body.text) > 2000:
+        raise HTTPException(413, "message too long")
+    if "merchant" not in user.roles:
+        security_event("impersonation", user, outcome="ok", code="message", case=s.case_id)
+        s.audit.add(s.world.now, "impersonation", case_id=s.case_id, outcome="ok", acting_as="merchant")
     s.agent.handle_message(body.text)
-    return _case_view(s)
-
-
-def _case_view(s: Session) -> dict[str, Any]:
-    return s.agent.view() | {"sid": s.id, "sim_now": s.world.now.isoformat(), "scenario_family": s.scenario.family,
-                             "merchant_name": s.world.spec.merchant_name, "unsafe": s.unsafe()}
-
-
-@app.get("/api/case")
-def case_view() -> dict[str, Any]:
-    return _case_view(_session())
+    return _case_view(s, user)
 
 
 @app.post("/api/case/decide")
-def case_decide(body: DecideBody) -> dict[str, Any]:
-    s = _session()
+def case_decide(body: DecideBody, ctx: tuple[User, Session] = Depends(agent_dep("approval.decide", limit=("decide", 30, 60)))) -> dict[str, Any]:
+    """Only an authenticated analyst can approve. The approver identity is the token's subject, never the request body."""
+    user, s = ctx
     try:
-        s.agent.analyst_decision(body.action_hash, body.approve, body.approver, body.role)
+        s.agent.analyst_decision(body.action_hash, body.approve, user.name, "analyst")
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except KeyError as e:
         raise HTTPException(404, str(e))
-    return _case_view(s)
+    return _case_view(s, user)
 
 
 @app.post("/api/case/edit")
-def case_edit(body: EditBody) -> dict[str, Any]:
+def case_edit(body: EditBody, ctx: tuple[User, Session] = Depends(agent_dep("approval.decide", limit=("decide", 30, 60)))) -> dict[str, Any]:
     """Analyst edits the evidence bundle. Editing changes the action hash, so it needs a fresh approval."""
-    s = _session()
+    user, s = ctx
     try:
         s.agent.edit_plan_action(body.action_hash, body.docs)
     except KeyError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return _case_view(s)
+    return _case_view(s, user)
 
 
 @app.post("/api/case/consent")
-def case_consent(body: ConsentBody) -> dict[str, Any]:
-    s = _session()
+def case_consent(body: ConsentBody, ctx: tuple[User, Session] = Depends(agent_dep("case.consent", limit=("message", 30, 60)))) -> dict[str, Any]:
+    user, s = ctx
+    if "merchant" not in user.roles:
+        security_event("impersonation", user, outcome="ok", code="consent", case=s.case_id)
+        s.audit.add(s.world.now, "impersonation", case_id=s.case_id, outcome="ok", acting_as="merchant")
     try:
         s.agent.merchant_consent(body.action_hash, body.accept)
     except KeyError as e:
         raise HTTPException(404, str(e))
-    return _case_view(s)
+    return _case_view(s, user)
 
 
 @app.get("/api/audit")
-def audit() -> list[dict[str, Any]]:
-    return _session().audit.dump()
+def audit(ctx: tuple[User, Session] = Depends(case_dep("audit.read"))) -> list[dict[str, Any]]:
+    return ctx[1].audit.dump()
 
 
-@app.post("/api/adversarial/run")
-def adversarial() -> dict[str, Any]:
-    out = run_suite()
-    return {k: out[k] for k in ("action_cases", "unsafe_actions", "screening_cases", "screening_misses",
-                                 "screening_false_positives", "failed")} | {"rows": out["rows"]}
+@app.get("/api/audit/verify")
+def audit_verify(ctx: tuple[User, Session] = Depends(case_dep("audit.verify"))) -> dict[str, Any]:
+    s = ctx[1]
+    return {"memory": s.audit.verify(), "file": s.audit.verify_file()}
+
+
+# ------------------------------------------------------------------ demo controls (dev only)
+@app.post("/api/session/reset")
+def reset(body: ResetBody, user: User = Depends(demo_dep())) -> dict[str, Any]:
+    try:
+        scn = generate(body.family, body.seed, body.canonical)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    write_ground_truth(scn)            # evaluator-only file; never returned by the API
+    old = ACTIVE.get(user.tenant)
+    if old and old in SESSIONS and SESSIONS[old].tenant == user.tenant:
+        SESSIONS.pop(old).delete_files()
+    return _public_state(_add(Session(scn, user.tenant, user.sub)))
+
+
+@app.post("/api/session/advance")
+def advance(body: AdvanceBody, ctx: tuple[User, Session] = Depends(agent_dep("demo.control"))) -> dict[str, Any]:
+    if not is_dev():
+        raise HTTPException(404, "not found")
+    s = ctx[1]
+    s.world.advance(max(0.0, min(body.hours, 24 * 14)))
+    s.agent.tick()
+    return _public_state(s)
 
 
 @app.post("/api/dev/fault")
-def dev_fault(body: FaultBody) -> dict[str, Any]:
+def dev_fault(body: FaultBody, ctx: tuple[User, Session] = Depends(case_dep("demo.control"))) -> dict[str, Any]:
+    if not is_dev():
+        raise HTTPException(404, "not found")
     try:
-        _session().world.inject_fault(body.tool, body.mode)
+        ctx[1].world.inject_fault(body.tool, body.mode)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return {"ok": True}
+    return {"ok": True, "modes": list(FAULT_MODES)}
 
 
-# ------------------------------------------------------------------ ops console (portfolio of cases)
+# ------------------------------------------------------------------ ops console (portfolio of cases, this tenant only)
+def _mine(user: User) -> list[Session]:
+    return [s for s in SESSIONS.values() if _visible(user, s)]
+
+
 def _summary(s: Session) -> dict[str, Any]:
     c = s.agent.s
     plan = c.plan
@@ -413,7 +424,7 @@ def _summary(s: Session) -> dict[str, Any]:
     sp = s.world.spec.supplier
     if sp and s.world.call("read_settlement")["status"] != "released":
         due_h = round((sp.due_at - s.world.now).total_seconds() / 3600, 1)
-    last = next((m.text for m in reversed(c.messages) if m.role == "agent"), "")
+    last = redact_obj(next((m.text for m in reversed(c.messages) if m.role == "agent"), ""))
     return {
         "sid": s.id, "case_id": s.case_id, "merchant": s.world.spec.merchant_name, "family": s.scenario.family,
         "intent": c.intent, "language": c.language, "status": c.status.value, "closed": c.closed, "waiting_on": waiting,
@@ -427,12 +438,16 @@ def _summary(s: Session) -> dict[str, Any]:
 _ORDER = {"analyst": 0, "merchant": 1, "source": 2, None: 3}
 
 
-@app.get("/api/cases")
-def list_cases() -> list[dict[str, Any]]:
-    rows = [_summary(s) for s in SESSIONS.values()]
+def _list(user: User) -> list[dict[str, Any]]:
+    rows = [_summary(s) for s in _mine(user)]
     rows.sort(key=lambda r: (_ORDER.get(r["waiting_on"], 3), r["status"] == "verified", r["hours_to_deadline"] is None,
                              r["hours_to_deadline"] or 0))
     return rows
+
+
+@app.get("/api/cases")
+def list_cases(user: User = Depends(require("console.read"))) -> list[dict[str, Any]]:
+    return _list(user)
 
 
 def _converse(s: Session, text: str | None = None) -> None:
@@ -442,84 +457,129 @@ def _converse(s: Session, text: str | None = None) -> None:
             s.agent.handle_message(f)
 
 
+def _kill_gate(user: User) -> None:
+    reason = KILL.blocked(user.sub)
+    if reason:
+        raise HTTPException(503, f"the agent is disabled ({reason})")
+
+
 @app.post("/api/cases/seed")
-def seed_portfolio(body: SeedBody) -> list[dict[str, Any]]:
-    """Replace the portfolio with one case per scenario family (canonical flagship), each already handled by the agent."""
-    SESSIONS.clear()
+def seed_portfolio(body: SeedBody, user: User = Depends(demo_dep(limit=("seed", 10, 60)))) -> list[dict[str, Any]]:
+    """Replace this tenant's portfolio with one case per scenario family, each already handled by the agent."""
+    _kill_gate(user)
+    for s in _mine(user):
+        SESSIONS.pop(s.id).delete_files()
     for i, fam in enumerate(body.families or list(REGISTRY)):
-        # the flagship keeps the canonical demo numbers; other families get distinct seeds so merchants differ
+        if fam not in REGISTRY:
+            raise HTTPException(404, f"unknown family {fam}")
         scn = generate(fam, CANONICAL_SEED if fam == "missing_evidence_flagship" else CANONICAL_SEED + i,
                        canonical=(fam == "missing_evidence_flagship"))
-        s = _add(Session(scn))
+        s = _add(Session(scn, user.tenant, user.sub))
         if body.send_messages:
             _converse(s)
-    return list_cases()
+    return _list(user)
 
 
 @app.post("/api/cases/new")
-def new_case(body: NewCaseBody) -> dict[str, Any]:
+def new_case(body: NewCaseBody, user: User = Depends(demo_dep(limit=("seed", 10, 60)))) -> dict[str, Any]:
+    _kill_gate(user)
+    if body.text and len(body.text) > 2000:
+        raise HTTPException(413, "message too long")
     try:
         scn = generate(body.family, body.seed, body.canonical)
     except KeyError as e:
         raise HTTPException(404, str(e))
     if body.text:
-        scn = scn.model_copy(update={"inbound": InboundMessage(text=body.text, language=scn.inbound.language),
-                                     "followups": []})
-    s = _add(Session(scn))
-    _converse(s, None if not body.text else body.text)
+        scn = scn.model_copy(update={"inbound": InboundMessage(text=body.text, language=scn.inbound.language), "followups": []})
+    s = _add(Session(scn, user.tenant, user.sub))
+    _converse(s, body.text or None)
     return _summary(s)
 
 
 @app.post("/api/cases/advance")
-def advance_all(body: AdvanceBody) -> list[dict[str, Any]]:
-    for s in SESSIONS.values():
-        s.world.advance(body.hours)
+def advance_all(body: AdvanceBody, user: User = Depends(demo_dep())) -> list[dict[str, Any]]:
+    _kill_gate(user)
+    for s in _mine(user):
+        s.world.advance(max(0.0, min(body.hours, 24 * 14)))
         s.agent.tick()
-    return list_cases()
+    return _list(user)
+
+
+@app.delete("/api/cases/{sid}")
+def delete_case(sid: str, user: User = Depends(require("data.delete"))) -> dict[str, Any]:
+    """Deletion path: removes the case from memory and deletes its audit file from disk."""
+    s = SESSIONS.get(sid)
+    if s is None or not _visible(user, s):
+        raise HTTPException(404, "no such case")
+    SESSIONS.pop(sid).delete_files()
+    if ACTIVE.get(user.tenant) == sid:
+        ACTIVE.pop(user.tenant, None)
+    security_event("data_deleted", user, outcome="ok", case=s.case_id)
+    return {"deleted": sid}
+
+
+@app.post("/api/admin/purge")
+def purge(user: User = Depends(require("data.delete"))) -> dict[str, Any]:
+    n = purge_expired()
+    security_event("retention_purge", user, outcome="ok", deleted=n)
+    return {"deleted_files": n, "retention_days": retention_days()}
+
+
+def purge_expired() -> int:
+    """Retention: audit files older than RIPPLE_RETENTION_DAYS are deleted (security audit and kill-switch state are kept)."""
+    cutoff = time.time() - retention_days() * 86400
+    n = 0
+    for p in data_dir().glob("audit_*.jsonl"):
+        try:
+            if p.stat().st_mtime < cutoff:
+                p.unlink()
+                n += 1
+        except OSError:
+            pass
+    return n
 
 
 @app.get("/api/console/kpis")
-def kpis() -> dict[str, Any]:
-    sess = list(SESSIONS.values())
+def kpis(user: User = Depends(require("console.read"))) -> dict[str, Any]:
+    sess = _mine(user)
     rows = [_summary(s) for s in sess]
     auto = sum(1 for r in rows if r["status"] == "auto_resolved")
-    needed_human = sum(1 for r in rows if r["waiting_on"] in ("analyst", "merchant") or r["status"] in ("escalated", "verified")
-                       or any(p.tier >= 2 for p in sess[rows.index(r)].agent.s.plan))
-    verified = sum(1 for r in rows if r["status"] == "verified")
+    needed_human = sum(1 for s, r in zip(sess, rows) if r["waiting_on"] in ("analyst", "merchant")
+                       or r["status"] in ("escalated", "verified") or any(p.tier >= 2 for p in s.agent.s.plan))
     mins = sum(s.agent.s.memo.minutes_saved for s in sess if s.agent.s.memo and any(p.tier == 3 for p in s.agent.s.plan))
     return {
-        "total": len(rows), "auto_resolved": auto, "verified": verified,
+        "total": len(rows), "auto_resolved": auto, "verified": sum(1 for r in rows if r["status"] == "verified"),
         "awaiting_analyst": sum(1 for r in rows if r["waiting_on"] == "analyst"),
         "awaiting_merchant": sum(1 for r in rows if r["waiting_on"] == "merchant"),
         "escalated": sum(1 for r in rows if r["status"] == "escalated"),
         "open": sum(1 for r in rows if not r["closed"] and r["status"] not in ("escalated",)),
         "autonomous_rate": {"k": auto, "n": auto + needed_human, "label": "auto-resolved ÷ (auto-resolved + cases that needed a person)"},
-        "unsafe_actions": sum(r["unsafe"] for r in rows),
-        "modeled_minutes_saved": mins,
+        "unsafe_actions": sum(r["unsafe"] for r in rows), "modeled_minutes_saved": mins,
         "at_risk": sum(1 for r in rows if r["at_risk"] and not r["closed"]),
     }
 
 
 @app.get("/api/approvals/pending")
-def pending_approvals() -> list[dict[str, Any]]:
+def pending_approvals(user: User = Depends(require("approval.read"))) -> list[dict[str, Any]]:
     out = []
-    for s in SESSIONS.values():
+    for s in _mine(user):
         c = s.agent.s
         for p in c.plan:
             if p.state == "awaiting_approval":
-                out.append({"sid": s.id, "case_id": s.case_id, "merchant": s.world.spec.merchant_name,
-                            "family": s.scenario.family, "action": p.action.model_dump(mode="json"), "label": p.label,
-                            "tier": p.tier, "memo": c.memo.model_dump(mode="json") if c.memo else None,
-                            "bundle": c.bundle.model_dump(mode="json") if c.bundle else None,
-                            "sim_now": s.world.now.isoformat(),
-                            "hours_to_deadline": _summary(s)["hours_to_deadline"]})
+                memo = c.memo.model_dump(mode="json") if c.memo else None
+                if memo and not user.can("case.pii"):
+                    memo["merchant_ask"] = redact_obj(memo["merchant_ask"])
+                out.append({"sid": s.id, "case_id": s.case_id, "merchant": s.world.spec.merchant_name, "family": s.scenario.family,
+                            "action": p.action.model_dump(mode="json"), "label": p.label, "tier": p.tier, "memo": memo,
+                            "bundle": c.bundle.model_dump(mode="json") if c.bundle else None, "sim_now": s.world.now.isoformat(),
+                            "hours_to_deadline": _summary(s)["hours_to_deadline"], "can_decide": user.can("approval.decide")})
     out.sort(key=lambda r: (r["hours_to_deadline"] is None, r["hours_to_deadline"] or 0))
     return out
 
 
-# ------------------------------------------------------------------ benchmark results
+# ------------------------------------------------------------------ benchmark, safety suite, lab (synthetic sandboxes)
 @app.get("/api/bench/results")
-def bench_results() -> dict[str, Any]:
+def bench_results(user: User = Depends(require("bench.read"))) -> dict[str, Any]:
     """Latest benchmark summary (frozen-v1 if present, else the dev run). Records are omitted to keep it small."""
     for name in ("bench_frozen-v1.json", "bench_dev.json"):
         path = ROOT / "data" / "results" / name
@@ -530,15 +590,54 @@ def bench_results() -> dict[str, Any]:
     raise HTTPException(404, "no benchmark results yet: python -m app.bench.run --label dev")
 
 
-# ------------------------------------------------------------------ lab: System C vs RIPPLE, same world, same message
+@app.post("/api/adversarial/run")
+def adversarial(user: User = Depends(require("lab.run", limit=("lab", 6, 60)))) -> dict[str, Any]:
+    out = run_suite()
+    return {k: out[k] for k in ("action_cases", "unsafe_actions", "screening_cases", "screening_misses",
+                                 "screening_false_positives", "failed")} | {"rows": out["rows"]}
+
+
 @app.get("/api/lab/presets")
-def lab_presets() -> dict[str, Any]:
-    return {"presets": [{"id": k, "family": v[0], "description": v[1]} for k, v in PRESETS.items()],
-            "attack_texts": ATTACK_TEXTS}
+def lab_presets(user: User = Depends(require("lab.run"))) -> dict[str, Any]:
+    return {"presets": [{"id": k, "family": v[0], "description": v[1]} for k, v in PRESETS.items()], "attack_texts": ATTACK_TEXTS}
 
 
 @app.post("/api/lab/run")
-def lab_run(body: LabBody) -> dict[str, Any]:
+def lab_run(body: LabBody, user: User = Depends(require("lab.run", limit=("lab", 10, 60)))) -> dict[str, Any]:
     if body.preset not in PRESETS:
         raise HTTPException(404, f"unknown preset {body.preset}")
+    if body.message and len(body.message) > 2000:
+        raise HTTPException(413, "message too long")
     return run_lab(body.preset, body.message, body.replay)
+
+
+# ------------------------------------------------------------------ governance
+@app.get("/api/admin/killswitch")
+def killswitch_state(user: User = Depends(require("killswitch.set"))) -> dict[str, Any]:
+    return KILL.state()
+
+
+@app.post("/api/admin/killswitch")
+def killswitch_set(body: KillBody, user: User = Depends(require("killswitch.set"))) -> dict[str, Any]:
+    if body.scope == "global":
+        KILL.set_global(body.on)
+    elif body.scope == "user" and body.target:
+        KILL.set_user(body.target, body.on)
+    else:
+        raise HTTPException(400, "scope must be 'global' or 'user' (with target)")
+    security_event("killswitch", user, outcome="on" if body.on else "off", code=body.scope, target=body.target)
+    return KILL.state()
+
+
+@app.get("/api/admin/security-log")
+def security_log(user: User = Depends(require("audit.verify"))) -> dict[str, Any]:
+    log = get_security_log()
+    return {"verify": log.verify(), "entries": log.dump()[-100:]}
+
+
+@app.exception_handler(Exception)
+async def unhandled(request: Request, exc: Exception):
+    """Never leak stack traces or internals to callers; details go to the server log only."""
+    import logging
+    logging.getLogger("ripple").exception("unhandled error on %s", request.url.path)
+    return JSONResponse({"detail": "internal error"}, status_code=500)
