@@ -1,0 +1,134 @@
+import { useState } from "react";
+import { AuditEntry, CaseView, RankedAction, Report } from "../api";
+import { Bar, Mono, fmtTime } from "./ui";
+
+export function RankedTable({ ranked, chosenId }: { ranked: RankedAction[]; chosenId: string }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[34rem] text-left text-xs">
+        <thead className="text-slate-500">
+          <tr><th className="py-1 pr-2">Action</th><th className="pr-2">Tier</th><th className="pr-2">P(miss)</th><th className="pr-2">E[harm]</th>
+            <th className="pr-2">Score</th><th className="pr-2">Release p50</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          {ranked.map((r) => {
+            const out = !r.permitted || !r.feasible;
+            return (
+              <tr key={r.id} className={`border-t border-slate-100 dark:border-slate-800 ${r.id === chosenId ? "bg-indigo-50 font-semibold dark:bg-indigo-950/40" : ""} ${out || r.decoy ? "text-slate-400" : ""}`}>
+                <td className={`py-1.5 pr-2 ${r.decoy ? "line-through decoration-dashed" : ""}`}>{r.label}{r.id === chosenId && <span className="ml-1 rounded bg-indigo-600 px-1 text-[10px] font-medium text-white">chosen</span>}</td>
+                <td className="pr-2">{r.id === "DO_NOTHING" ? "-" : r.tier}</td>
+                <td className="pr-2"><Bar value={r.p_miss} /></td>
+                <td className="pr-2 tabular-nums">{r.expected_harm.toFixed(3)}</td>
+                <td className="pr-2 tabular-nums">{r.score.toFixed(3)}</td>
+                <td className="pr-2 tabular-nums">{r.release_p50_h != null ? `${r.release_p50_h.toFixed(0)}h` : "-"}</td>
+                <td className="font-normal text-slate-500">{r.decoy && !out ? "decoy: no causal path" : out ? r.reason : ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function WhyDrawer({ r }: { r: Report }) {
+  const [open, setOpen] = useState(false);
+  const p = r.params;
+  return (
+    <div>
+      <button className="text-sm font-medium text-indigo-600 underline" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? "Hide" : "Why?"} how this was decided</button>
+      {open && (
+        <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-700 dark:bg-slate-950">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+            <dt className="text-slate-500">Graph</dt><dd>version {r.graph.version}, digest <Mono>{r.graph.digest}</Mono>, {r.graph.nodes.length} nodes, {r.graph.edges.length} edges</dd>
+            <dt className="text-slate-500">Simulation</dt><dd>seed <Mono>{r.seed}</Mono>, {r.n_samples.toLocaleString()} samples, same seed gives the same decision</dd>
+            <dt className="text-slate-500">Stability</dt><dd>{(r.stability * 100).toFixed(0)}% of ±20% parameter perturbations pick the same action</dd>
+            <dt className="text-slate-500">Priors</dt>
+            <dd>review ~{p.review_hours?.mean}h ± {p.review_hours?.sd}, release ~{p.release_delay_hours?.mean}h, approval median {p.approval_latency_hours?.median}h, notice accepted {(p.supplier_notice?.accept_prob * 100).toFixed(0)}% (all modeled)</dd>
+            <dt className="text-slate-500">Policy result</dt><dd>disposition <b>{r.disposition}</b>{r.triggers.length > 0 && <>, triggers: {r.triggers.join(", ")}</>}{r.conflicts.length > 0 && <>, conflicts: {r.conflicts.join("; ")}</>}</dd>
+            <dt className="text-slate-500">Trace</dt><dd>{r.trace.status}; only confirmed and obligation edges were walked; {r.trace.rejected_edges.length} correlated edge(s) rejected</dd>
+          </dl>
+          <p className="text-slate-500">The model extracted the message and drafted replies. It did not score, gate, execute, invent edges or declare any status; those are deterministic code.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const LADDER = ["attempted", "submitted", "approved", "executed", "verified"];
+export function StateLadder({ plan }: { plan: CaseView["plan"] }) {
+  if (!plan.length) return <p className="text-sm text-slate-500">No actions planned yet.</p>;
+  return (
+    <div className="space-y-3">
+      {plan.map((p) => (
+        <div key={p.action.hash} className="text-sm">
+          <p className="mb-1 flex flex-wrap items-center gap-2"><b>{p.label}</b><span className="text-xs text-slate-500">tier {p.tier} · {p.state.replaceAll("_", " ")}</span>
+            <span className="text-xs text-slate-500">key <Mono>{p.action.idempotency_key}</Mono></span></p>
+          <ol className="flex flex-wrap gap-1">
+            {LADDER.map((s) => {
+              const done = p.ladder.includes(s);
+              const na = (s === "submitted" || s === "approved") && p.tier === 1;
+              return <li key={s} className={`rounded-full px-2 py-0.5 text-xs ${na ? "hidden" : done ? (s === "verified" ? "bg-emerald-600 text-white" : "bg-indigo-600 text-white") : "border border-slate-300 text-slate-400 dark:border-slate-700"}`}>{s}</li>;
+            })}
+          </ol>
+          {p.note && <p className="mt-1 text-xs text-red-600">{p.note}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ActionLog({ audit }: { audit: AuditEntry[] }) {
+  // hide routine noise: source reads and the agent's own chat replies (denied replies are still shown)
+  const at = (e: AuditEntry) => String(e.data.action_type ?? "");
+  const shown = audit.filter((e) => {
+    if (e.kind === "firewall") return !at(e).startsWith("read_") && !(at(e) === "send_merchant_message" && e.outcome === "allow");
+    if (e.kind === "tool_call") return at(e) !== "send_merchant_message";
+    if (e.kind === "verification") return e.data.reason !== "message in notification log";
+    return true;
+  });
+  return (
+    <div className="max-h-72 overflow-auto">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-white text-left text-slate-500 dark:bg-slate-900"><tr><th className="py-1 pr-2">#</th><th className="pr-2">Kind</th><th className="pr-2">Outcome</th><th className="pr-2">Detail</th><th>Action</th></tr></thead>
+        <tbody>
+          {shown.map((e) => (
+            <tr key={e.seq} className="border-t border-slate-100 align-top dark:border-slate-800">
+              <td className="py-1 pr-2 text-slate-500">{e.seq}</td>
+              <td className="pr-2">{e.kind}</td>
+              <td className={`pr-2 font-medium ${e.outcome === "deny" || e.outcome === "failed" || e.outcome === "timeout" ? "text-red-600" : e.outcome === "allow" || e.outcome === "ok" || e.outcome === "verified" || e.outcome === "issued" ? "text-emerald-600" : ""}`}>{e.outcome}</td>
+              <td className="pr-2">{e.code || String(e.data.reason ?? e.data.approver ?? "")}</td>
+              <td><Mono>{String(e.data.action_type ?? "")}</Mono> {e.action_hash && <Mono className="text-slate-400">{e.action_hash.slice(0, 8)}</Mono>}</td>
+            </tr>
+          ))}
+          {!shown.length && <tr><td colSpan={5} className="py-3 text-slate-500">No actions yet.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function ContextPanel({ world, events }: { world: Record<string, any>; events: { id: string; ts: string; source: string; type: string; source_ref: string }[] }) {
+  const s = world.settlement, d = world.dispute, k = world.kyc, sp = world.supplier, rf = world.refund;
+  return (
+    <div className="grid gap-3 text-xs md:grid-cols-2">
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Obligations</p>
+        {sp ? <p>Pay <b>{sp.name}</b> Rs {sp.amount.toLocaleString("en-IN")} by <b>{fmtTime(sp.due_at)}</b>{sp.notices_sent > 0 && <span className="text-emerald-600"> · notice sent</span>}</p> : <p className="text-slate-500">None known</p>}
+        {s && <p>Settlement <b>{s.status.replace("_", " ")}</b>, Rs {s.amount_total.toLocaleString("en-IN")}{s.held_amount > 0 && ` (Rs ${s.held_amount.toLocaleString("en-IN")} held: ${s.hold_reason_code})`}</p>}
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Open cases at sources</p>
+        {d && <p>Dispute {d.dispute_id}: <b>{d.status.replaceAll("_", " ")}</b>, evidence due {fmtTime(d.evidence_due)}</p>}
+        {rf && <p>Refund {rf.refund_id}: <b>{rf.status}</b>, Rs {rf.amount.toLocaleString("en-IN")}</p>}
+        {k && <p>KYC: <b>{k.status}</b>{k.expires_at && `, expires ${fmtTime(k.expires_at)}`}{k.opted_in_reminders ? ", reminders opted in" : ""}</p>}
+        {!d && !rf && <p className="text-slate-500">No dispute or refund open</p>}
+      </div>
+      <div>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Source timeline</p>
+        <ul className="max-h-40 space-y-0.5 overflow-auto">
+          {events.map((e) => <li key={e.id}><span className="text-slate-500">{fmtTime(e.ts)}</span> <b>{e.source}.{e.type}</b></li>)}
+          {!events.length && <li className="text-slate-500">No source events yet</li>}
+        </ul>
+      </div>
+    </div>
+  );
+}
