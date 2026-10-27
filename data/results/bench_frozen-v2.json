@@ -2,12 +2,12 @@
  "meta": {
   "label": "frozen-v2",
   "scored": true,
-  "created_utc": "2026-10-27T15:42:26+00:00",
+  "created_utc": "2026-10-27T15:43:06+00:00",
   "config_version": "1.0.0",
   "config_hash": "45c436370130abd3",
   "policy_hash": "785556e8c7fb1782",
-  "git_commit": "185468fdc1ee",
-  "git_dirty": true,
+  "git_commit": "90385dfd865f",
+  "git_dirty": false,
   "git_tags_at_head": [],
   "families": [
    "missing_evidence_flagship",
@@ -54,7 +54,7 @@
   },
   "llm": "off (deterministic rules)",
   "synthetic_data": true,
-  "runtime_s": 20.5,
+  "runtime_s": 21.1,
   "notes": [
    "System C is a scripted proxy of a tool-calling LLM agent, not a live model.",
    "Cost, time and harm values are modeled assumptions from config/frozen.yaml.",

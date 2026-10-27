@@ -6,7 +6,7 @@ Last updated: 2026-10-27. All data is synthetic.
 ## Summary
 RIPPLE works end to end on synthetic data: it traces the cause of a merchant's problem, acts only through a rules gate, hands a person a one-tap approval, and closes a case only when the source system proves it.
 
-- **Verified:** backend and browser-client tests pass; the benchmark ran 720 seeded runs at a frozen config; the dashboard and sign-in were clicked through in a real browser.
+- **Verified:** backend and browser-client tests pass; the benchmark ran 840 seeded runs at a frozen config (frozen-v2); the dashboard and sign-in were clicked through in a real browser.
 - **Not verified:** nothing has touched a real identity provider, Vault, AWS account, live model or real merchant data. Every source system is a mock.
 
 ## What is built
@@ -16,19 +16,19 @@ RIPPLE works end to end on synthetic data: it traces the cause of a merchant's p
 | Decision engine | Timeline, provenance graph, reverse trace over confirmed edges only, seeded deadline simulator, scorer including do-nothing, stability check, escalation triggers | Decoy ignored, same seed same result, unreachable deadline escalates |
 | Safety layer | Four-tier action firewall, hash-bound single-use approvals (analyst only), merchant consent for exact text, idempotent executor with timeout reconciliation, rule-based verifier | 44-case attack suite (zero unsafe); mutation test proves it can fail |
 | Agent | Hindi/English/Hinglish intake, fact-bound replies, evidence bundle, analyst memo, multi-turn follow-ups, attack tripwire | Orchestrator tests |
-| Benchmark | Five systems, 720 runs, intervals, independent auditor, frozen at tag `frozen-v1` | Reproducible; results committed |
+| Benchmark | Five systems, 840 runs over 14 families, intervals, independent auditor, `frozen-v2` (v1 at tag `frozen-v1`) | Reproducible; results committed |
 | Dashboard | Ops Console, Case page with trace graph, Approvals, Scoreboard, Lab, Admin | Real browser; phone width |
 | Security controls | Auth on every route, roles from token only, tenant isolation, PII redaction, model data gate, HMAC-chained encrypted audit log, kill switch, rate limits, retention | Security tests |
 | Browser sign-in | Authorization code + PKCE, silent renewal, IdP logout; API validates RS256 tokens | Flow tests, client tests, real browser vs mock IdP |
 | Secrets | Vault (AppRole, Kubernetes, Agent token file) and AWS Secrets Manager adapters | Mock Vault with TLS, moto |
 
-## Benchmark results (frozen-v1)
+## Benchmark results (frozen-v2: 840 runs, 14 families)
 | System | Autonomous | Verified | Unsafe actions | False "resolved" |
 | --- | --- | --- | --- | --- |
 | A. Chatbot | 0% | 0% | 0 | 0 |
 | B. Deadline tracker | 0% | 0% | 0 | 0 |
-| C. Plain agent (scripted proxy) | 100% | 63% | 240 | 72 |
-| D. RIPPLE without tracing | 100% | 63% | 0 | 0 |
+| C. Plain agent (scripted proxy) | 100% | 50% | 300 | 96 |
+| D. RIPPLE without tracing | 100% | 50% | 0 | 0 |
 | E. Full RIPPLE | 100% | 100% | 0 | 0 |
 
 Autonomy is a tie with the plain agent; the plain agent is cheaper in the modeled cost and missed no avoidable deadline; the benchmark is self-authored. See [BENCHMARK.md](BENCHMARK.md).
@@ -66,3 +66,24 @@ Cannot be done from this machine, needs you or outside systems:
 - `frozen-v2`: fix the intake gaps listed in INTAKE_EVAL.md (Devanagari word boundaries, ETA rule order, a few patterns, stricter supplier flag), re-run the benchmark, evaluate on new messages.
 - Persistence for cases (they live in memory).
 - A backup screen recording of the demo (only you can make it) and one full click-through before presenting.
+
+
+## Coverage of the v3 build specification (2026-10-27)
+Source: "RIPPLE v3 - Winning Build Specification". Status as built, not as hoped.
+
+| v3 item | State |
+|---|---|
+| Problem-statement fit: context, decisions, actions across systems, end-to-end resolution, escalation only when needed, measurable outcomes, works with humans | **Built** (chat + context panel, ranked actions with do-nothing, mock settlement/dispute/KYC/supplier/notification tools, verified closure, tiers, scoreboard, one-tap card) |
+| 14 scenario families (section 6) | **Built: all 14** (rows 6 and 14 added in frozen-v2). The spec's "target 40 templates" is **not** met: 14 parameterised families, 12 seeds each |
+| Five systems, expected failure modes of System C shown live | **Built** (Lab split view) |
+| Metrics 8.1 to 8.3 incl. escalation precision, recall, false escalation, time p50/p90, cost, repeat contacts, human minutes, causal trace precision, stability, do-nothing correctness, promise extraction accuracy | **Built**, with sample counts. Parameters were frozen before the scored run, after dev iterations (disclosed in BENCHMARK.md) |
+| Escalation recall at a pre-declared target | **Not met as written**: no numeric target was declared before the run; recall is reported (96/96) |
+| P0 gates (Tier 4 denied, no false closure, reproducible, causal path) | **Met** (44-case suite 0 unsafe; 0 false resolved; same seed same decision; no unsupported edge as sole basis) |
+| P2: promise ledger, robustness sampling, promise repair, judge-attack box | **Built**: ledger persisted in SQLite and shown on the case page (small labelled set: 20 template + 120 natural messages); robustness is the stability check; repair is the consented supplier notice (it carries no new date); Lab attack box |
+| P2: "sensitivity numbers" | **Built** (`app.bench.sensitivity`, Scoreboard card); see the caveat there |
+| P3: Hindi voice | **Built in the browser** (read-aloud and microphone via the browser's speech APIs; not tested with a real microphone here, and recognition quality depends on the browser) |
+| P3: portfolio view | **Built, illustrative**: 200 synthetic merchants with a planted cause distribution through the real engine |
+| Architecture: SQLite for records/audit, Streamlit UI | **SQLite**: decision records, memos, outcomes, ledger, follow-ups (the tamper-evident audit stays an encrypted HMAC-chained file). **UI is React**, not Streamlit, and has more than the three screens |
+| Tier 1 "schedule internal recheck" | **Built** (`schedule_follow_up`, through the firewall, idempotent) |
+| Deferred by the spec: bridge financing, udhaar recovery, learned rules, Soundbox hardware | **Not built, on purpose.** An earlier in-progress version of some of this was removed |
+| Demo script (3 minutes) and `scripts/demo_check.py` | **Built** |
