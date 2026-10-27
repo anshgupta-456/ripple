@@ -55,7 +55,7 @@ Cannot be done from this machine, needs you or outside systems:
 | Demo rehearsal script (`scripts/demo_check.py`) | **Done**: five rounds, every beat asserted, about 2 s a round in-process. Does not check how pages look |
 | Pitch deck | **Done**: 8 slides with speaker notes in a private shared deck (link in the session); numbers come from the frozen benchmark and the intake evaluation |
 
-| Free local model fallback (Ollama) | **Done and tested** (57 tests incl. mutation-checked network guards; live on this laptop and from the container). **Measured on two models (3B vision and 3B text, `qwen2.5:3b`): both safe, neither improves accuracy** (0 helped, 0 hurt on the 24 messages the rules are unsure about): [LOCAL_LLM.md](LOCAL_LLM.md) |
+| Free model fallback (Ollama) | **Done and tested** (59 tests incl. mutation-checked network guards). **Runs on the GPU server `saveenas@192.168.30.206` over an SSH tunnel, never on the laptop** (opt-in by `RIPPLE_OLLAMA_URL`; no default), using the Qwen3.5-9B already running there through its OpenAI-style API (`RIPPLE_LOCAL_API=openai`); verified end to end, about 0.6 s per call. **Measured on three models: the two 3B models help nothing; Qwen3.5-9B helped 2, hurt 0 of the 24 messages the rules are unsure about** (small sample): [LOCAL_LLM.md](LOCAL_LLM.md) |
 | Admin "Language model" card and `/api/admin/llm` | **Done** |
 | Security-event log survives restarts (set aside, not deleted, if unreadable) | **Done and tested** |
 

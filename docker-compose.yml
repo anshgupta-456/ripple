@@ -17,6 +17,7 @@ services:
       # Language model (all optional; with none the agent uses its deterministic rules). A container cannot reach the host's 127.0.0.1:
       # to use Ollama on the host set RIPPLE_OLLAMA_URL=http://host.docker.internal:11434 and RIPPLE_OLLAMA_ALLOWED_HOSTS=host.docker.internal.
       RIPPLE_LLM_PROVIDER: ${RIPPLE_LLM_PROVIDER:-auto}
+      RIPPLE_LOCAL_API: ${RIPPLE_LOCAL_API:-ollama}
       RIPPLE_OLLAMA_URL: ${RIPPLE_OLLAMA_URL:-}
       RIPPLE_OLLAMA_ALLOWED_HOSTS: ${RIPPLE_OLLAMA_ALLOWED_HOSTS:-}
       RIPPLE_OLLAMA_MODEL: ${RIPPLE_OLLAMA_MODEL:-}

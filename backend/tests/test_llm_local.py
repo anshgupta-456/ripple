@@ -423,3 +423,164 @@ def test_status_reports_what_would_be_used_and_never_a_key(fake, monkeypatch):
     assert st["ollama"]["reachable"] and st["ollama"]["model"] == "tiny-chat:3b" and st["ollama"]["local_only"] is True
     assert st["anthropic"]["key_configured"] is True and "sk-test" not in json.dumps(st)
     forget_all()
+
+
+# ------------------------------------------------------------------ opt-in: never a model on the machine RIPPLE runs on, by accident
+def test_without_an_explicit_url_there_is_no_local_provider_and_nothing_is_contacted(fake, tmp_path, monkeypatch):
+    f = fake()
+    monkeypatch.delenv("RIPPLE_OLLAMA_URL", raising=False)
+    m = L(tmp_path)
+    assert m.complete_json("intake", "s", "settlement kab aayega")[1] == "none" and f.hits == [] and m.stats["host_refused"] == 0
+    assert Ollama().host_ok() is False
+    assert llm_status()["ollama"]["enabled"] is False and mod.warm_up() is None
+
+
+def test_warm_up_does_nothing_unless_a_url_is_configured_and_allowed(fake, monkeypatch):
+    f = fake()
+    t = mod.warm_up()
+    assert t is not None
+    t.join(5)
+    assert any(c["options"]["num_predict"] == 1 for c in f.chats)               # configured (the fake fixture sets a URL): warms the model
+    monkeypatch.delenv("RIPPLE_OLLAMA_URL")
+    assert mod.warm_up() is None
+
+
+# ------------------------------------------------------------------ OpenAI-compatible servers (llama.cpp llama-server, vLLM, LM Studio)
+class FakeOpenAI:
+    def __init__(self, reply='{"intent": "settlement_status", "confidence": 0.9}', models=("qwen35-9b-vision", "bge-embed"), redirect=False):
+        self.reply, self.models, self.redirect = reply, models, redirect
+        self.chats: list[dict] = []
+        self.hits: list[str] = []
+        fake = self
+
+        class H(BaseHTTPRequestHandler):
+            def _send(self, code, body):
+                raw = json.dumps(body).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def do_GET(self):
+                fake.hits.append(self.path)
+                self._send(200, {"object": "list", "data": [{"id": m, "object": "model"} for m in fake.models]}) if self.path == "/v1/models" else self._send(404, {})
+
+            def do_POST(self):
+                fake.hits.append(self.path)
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if self.path == "/elsewhere":
+                    return self._send(200, {"choices": [{"message": {"content": "{}"}}]})
+                fake.chats.append(body)
+                if fake.redirect:
+                    self.send_response(302)
+                    self.send_header("Location", "/elsewhere")
+                    self.end_headers()
+                    return
+                self._send(200, {"choices": [{"message": {"role": "assistant", "content": fake.reply}}]})
+
+            def log_message(self, *a):
+                pass
+
+        self.srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.srv.server_port}"
+
+    def stop(self):
+        self.srv.shutdown()
+
+
+@pytest.fixture
+def oai(monkeypatch):
+    made: list[FakeOpenAI] = []
+
+    def make(**kw) -> FakeOpenAI:
+        f = FakeOpenAI(**kw)
+        made.append(f)
+        monkeypatch.setenv("RIPPLE_LLM_LOCAL", "on")
+        monkeypatch.setenv("RIPPLE_LOCAL_API", "openai")
+        monkeypatch.setenv("RIPPLE_OLLAMA_URL", f.url)
+        monkeypatch.delenv("RIPPLE_OLLAMA_MODEL", raising=False)
+        mod.reset_state()
+        return f
+
+    forget_all()
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    yield make
+    for f in made:
+        f.stop()
+    mod.reset_state()
+
+
+def test_an_openai_style_server_is_discovered_and_used(oai, tmp_path):
+    f = oai()
+    data, src = L(tmp_path).complete_json("intake", "sys", "settlement kab aayega call 9876543210")
+    assert src == "local" and data["intent"] == "settlement_status"
+    body = f.chats[0]
+    assert f.hits[0] == "/v1/models" and "/v1/chat/completions" in f.hits
+    assert body["model"] == "qwen35-9b-vision"                                  # the embedding model on the same server is skipped
+    assert body["response_format"] == {"type": "json_object"} and body["temperature"] == 0 and body["stream"] is False
+    assert "keep_alive" not in body and "think" not in body and "format" not in body      # Ollama-only fields are not sent
+    assert "9876543210" not in json.dumps(body["messages"]) and "[PHONE]" in json.dumps(body["messages"])
+
+
+def test_an_explicit_model_name_wins_on_an_openai_style_server(oai, tmp_path, monkeypatch):
+    f = oai(models=("a", "b"))
+    monkeypatch.setenv("RIPPLE_OLLAMA_MODEL", "b")
+    L(tmp_path).complete_json("intake", "s", "x")
+    assert f.chats[0]["model"] == "b"
+
+
+def test_the_intake_path_works_the_same_through_an_openai_style_server(oai, tmp_path):
+    oai(reply='{"intent": "refund_status", "confidence": 0.9}')
+    r = extract(UNSURE, L(tmp_path))
+    assert r.source == "llm_local" and r.intent == "refund_status" and r.confidence == 0.75
+    assert extract("mera settlement kab aayega?", L(tmp_path)).source == "rules"          # a clear message still never waits on it
+
+
+def test_ollama_and_openai_style_answers_are_cached_separately(oai, fake, tmp_path, monkeypatch):
+    f = fake()                                                                 # an Ollama fake on its own port
+    monkeypatch.setenv("RIPPLE_LOCAL_API", "ollama")
+    monkeypatch.setenv("RIPPLE_OLLAMA_URL", f.url)
+    mod.reset_state()
+    assert L(tmp_path).complete_json("intake", "s", "settlement kab aayega")[1] == "local"
+    o = FakeOpenAI(models=("tiny-chat:3b",))                                    # same model NAME, other dialect
+    try:
+        monkeypatch.setenv("RIPPLE_LOCAL_API", "openai")
+        monkeypatch.setenv("RIPPLE_OLLAMA_URL", o.url)
+        mod.reset_state()
+        assert L(tmp_path).complete_json("intake", "s", "settlement kab aayega")[1] == "local" and len(o.chats) == 1
+    finally:
+        o.stop()
+
+
+def test_a_redirect_from_an_openai_style_server_is_not_followed(oai, tmp_path):
+    f = oai(redirect=True)
+    assert L(tmp_path).complete_json("intake", "s", "x")[1] == "none" and "/elsewhere" not in f.hits
+
+
+@pytest.mark.parametrize("reply", ["not json", "[]", "", '{"intent": '])
+def test_junk_from_an_openai_style_server_means_rules(oai, tmp_path, reply):
+    oai(reply=reply)
+    assert extract(UNSURE, L(tmp_path)).source == "rules"
+
+
+def test_an_unknown_api_dialect_turns_the_local_provider_off_and_contacts_nothing(oai, tmp_path, monkeypatch):
+    f = oai()
+    monkeypatch.setenv("RIPPLE_LOCAL_API", "grpc")
+    mod.reset_state()
+    assert Ollama().host_ok() is False
+    assert L(tmp_path).complete_json("intake", "s", "x")[1] == "none" and f.hits == []
+
+
+def test_warm_up_on_an_openai_style_server_sends_no_chat_request(oai):
+    f = oai()
+    t = mod.warm_up()
+    t.join(5)
+    assert f.chats == [] and "/v1/models" in f.hits
+
+
+def test_status_names_the_api_dialect_and_the_model(oai):
+    oai()
+    st = llm_status()["ollama"]
+    assert st["api"] == "openai" and st["reachable"] is True and st["model"] == "qwen35-9b-vision" and st["installed"] == ["qwen35-9b-vision"]
