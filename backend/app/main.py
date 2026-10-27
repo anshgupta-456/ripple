@@ -11,15 +11,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.analysis import analyze_world
+from app.audit.log import AuditLog
+from app.bench.adversarial import run_suite
+from app.executor.executor import Executor
+from app.firewall.firewall import Firewall, FirewallContext
+from app.firewall.stores import ApprovalStore, ConsentStore
+from app.models.contracts import Action
 from app.bench.templates import CANONICAL_SEED, REGISTRY, Scenario, generate, write_ground_truth
-from app.config import load_config
-from app.mock_sources.world import (
-    FAULT_MODES,
-    MissingIdempotencyKey,
-    ToolTimeout,
-    UnknownTool,
-    World,
-)
+from app.config import ROOT, load_config
+from app.mock_sources.world import FAULT_MODES, World
 
 app = FastAPI(title="RIPPLE", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"],
@@ -32,6 +32,19 @@ class Session:
         self.scenario = scenario
         self.world = World(scenario.world_spec)
         self.last_graph = None
+        self.case_id = f"C-{self.id}"
+        self.audit = AuditLog(ROOT / "data" / f"audit_{self.id}.jsonl")
+        self.approvals = ApprovalStore(load_config()["policy"]["approval_expiry_minutes"])
+        self.consents = ConsentStore()
+        self.firewall = Firewall(self.approvals, self.consents, self.audit)
+        self.executor = Executor(self.world, self.firewall, self.audit, self.approvals, self.consents)
+        self.proposals: dict[str, Action] = {}
+
+    def ctx(self) -> FirewallContext:
+        w = self.world
+        ids = {"dispute_id": {w.spec.dispute.dispute_id}} if w.spec.dispute else {}
+        return FirewallContext(case_id=self.case_id, merchant_id=w.spec.merchant_id, now=w.now,
+                               allowed_ids=ids, kyc_opted_in=w.kyc.spec.opted_in_reminders)
 
 
 SESSION: Session | None = None
@@ -67,10 +80,19 @@ class AdvanceBody(BaseModel):
     hours: float
 
 
-class ToolBody(BaseModel):
-    tool: str
+class ProposeBody(BaseModel):
+    type: str
     params: dict[str, Any] = {}
-    idem_key: str | None = None
+
+
+class GrantBody(BaseModel):
+    action_hash: str
+    approver: str = ""
+    role: str = ""
+
+
+class ExecuteBody(BaseModel):
+    action_hash: str
 
 
 class FaultBody(BaseModel):
@@ -162,17 +184,64 @@ def dev_tools() -> dict[str, Any]:
     return {"tools": {n: {"write": t.write} for n, t in w.tools.items()}, "fault_modes": list(FAULT_MODES)}
 
 
-@app.post("/api/dev/tool")
-def dev_tool(body: ToolBody) -> dict[str, Any]:
-    w = _session().world
+# ---- action pipeline: propose -> (consent | approval) -> execute. Every step is audited. ----
+@app.post("/api/actions/propose")
+def propose(body: ProposeBody) -> dict[str, Any]:
+    s = _session()
+    a = Action(case_id=s.case_id, type=body.type, params=body.params)
+    s.proposals[a.hash] = a
+    d = s.firewall.check(a, s.ctx())
+    return {"action": a.model_dump(mode="json"), "decision": d.model_dump()}
+
+
+def _proposal(s: Session, h: str) -> Action:
+    a = s.proposals.get(h)
+    if a is None:
+        raise HTTPException(404, "unknown action_hash: propose it first")
+    return a
+
+
+@app.post("/api/approvals/issue")
+def issue_approval(body: GrantBody) -> dict[str, Any]:
+    s = _session()
+    a = _proposal(s, body.action_hash)
     try:
-        return {"result": w.call(body.tool, body.params, body.idem_key)}
-    except UnknownTool:
-        raise HTTPException(404, f"no such tool: {body.tool}")
-    except MissingIdempotencyKey:
-        raise HTTPException(400, "write tools require an idempotency key")
-    except ToolTimeout as e:
-        raise HTTPException(504, {"error": "timeout", "idem_key": e.idem_key, "outcome": "unknown"})
+        ap = s.approvals.issue(a, body.approver, body.role, s.world.now)
+    except PermissionError as e:
+        s.audit.add(s.world.now, "approval", case_id=s.case_id, action_hash=a.hash, outcome="deny",
+                    code="issuer_not_authorised", role=body.role, approver=body.approver)
+        raise HTTPException(403, str(e))
+    s.audit.add(s.world.now, "approval", case_id=s.case_id, action_hash=a.hash, outcome="issued",
+                approver=body.approver, expires_at=ap.expires_at.isoformat())
+    return ap.model_dump(mode="json")
+
+
+@app.post("/api/consents/issue")
+def issue_consent(body: GrantBody) -> dict[str, Any]:
+    s = _session()
+    a = _proposal(s, body.action_hash)
+    c = s.consents.issue(a, s.world.spec.merchant_id, s.world.now)
+    s.audit.add(s.world.now, "consent", case_id=s.case_id, action_hash=a.hash, outcome="issued")
+    return c.model_dump(mode="json")
+
+
+@app.post("/api/actions/execute")
+def execute(body: ExecuteBody) -> dict[str, Any]:
+    s = _session()
+    r = s.executor.execute(_proposal(s, body.action_hash), s.ctx())
+    return r.model_dump(mode="json") | {"verified": r.verified}
+
+
+@app.get("/api/audit")
+def audit() -> list[dict[str, Any]]:
+    return _session().audit.dump()
+
+
+@app.post("/api/adversarial/run")
+def adversarial() -> dict[str, Any]:
+    out = run_suite()
+    return {k: out[k] for k in ("action_cases", "unsafe_actions", "screening_cases", "screening_misses",
+                                 "screening_false_positives", "failed")} | {"rows": out["rows"]}
 
 
 @app.post("/api/dev/fault")
