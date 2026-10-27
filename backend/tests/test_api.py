@@ -26,6 +26,14 @@ def test_reset_hides_ground_truth_and_flagship_flow():
     assert len(c.get("/api/session/events").json()) >= 4
 
 
+def test_analyze_endpoint_returns_ranked_actions_without_acting():
+    c.post("/api/session/reset", json={})
+    r = c.post("/api/session/analyze", json={}).json()
+    assert r["chosen"]["id"] == "SUBMIT_DISPUTE_EVIDENCE+SEND_SUPPLIER_NOTICE"
+    assert r["disposition"] == "needs_human_approval" and r["seed"] == 5120
+    assert c.get("/api/session/events").json() == []     # analysis takes no actions
+
+
 def test_unknown_tool_404_and_timeout_504():
     c.post("/api/session/reset", json={})
     assert c.post("/api/dev/tool", json={"tool": "release_risk_hold", "idem_key": "x"}).status_code == 404

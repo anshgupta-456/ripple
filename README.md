@@ -7,7 +7,8 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 ## Status
 - Phase 0 done: repo, contracts (`backend/app/models/contracts.py`), frozen config (`config/frozen.yaml`), FastAPI + SSE, React/Vite/Tailwind shell.
 - Phase 1 done: stateful mock sources with fault injection, idempotency ledger, seeded scenario templates (flagship, status query, no-action), evaluator-only ground truth.
-- Next: Phase 2 (graph, reverse trace, simulator, scorer) and Phase 3 (firewall, executor, verifier).
+- Phase 2 done: timeline normalizer, provenance graph (versioned), evidence-constrained reverse trace, seeded deadline-feasibility simulator, scorer with do-nothing, stability check, deterministic escalation triggers. `POST /api/session/analyze` runs it with no side effects.
+- Next: Phase 3 (firewall, executor, verifier, audit, adversarial suite).
 
 ## Run
 ```

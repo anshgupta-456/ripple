@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.analysis import analyze_world
 from app.bench.templates import CANONICAL_SEED, REGISTRY, Scenario, generate, write_ground_truth
 from app.config import load_config
 from app.mock_sources.world import (
@@ -30,6 +31,7 @@ class Session:
         self.id = uuid.uuid4().hex[:8]
         self.scenario = scenario
         self.world = World(scenario.world_spec)
+        self.last_graph = None
 
 
 SESSION: Session | None = None
@@ -55,6 +57,10 @@ class ResetBody(BaseModel):
     family: str = "missing_evidence_flagship"
     seed: int = CANONICAL_SEED
     canonical: bool = True
+
+
+class AnalyzeBody(BaseModel):
+    seed: int = CANONICAL_SEED
 
 
 class AdvanceBody(BaseModel):
@@ -108,6 +114,15 @@ def advance(body: AdvanceBody) -> dict[str, Any]:
     s = _session()
     s.world.advance(body.hours)
     return _public_state(s)
+
+
+@app.post("/api/session/analyze")
+def analyze(body: AnalyzeBody) -> dict[str, Any]:
+    """Run the deterministic decision engine on the current world state (no actions taken)."""
+    s = _session()
+    report = analyze_world(s.world, body.seed, s.last_graph)
+    s.last_graph = report.graph
+    return report.model_dump(mode="json")
 
 
 @app.get("/api/session/events")

@@ -49,3 +49,22 @@ mock_world:
   start_local: "2026-11-02T10:00:00"  # Monday 10:00 IST
   default_review_hours: 20
   default_release_delay_hours: 6
+
+engine:
+  # Priors the agent is allowed to know (from "history"). The hidden truth of a scenario is never read.
+  review_hours: {mean: 20.0, sd: 4.0, min: 6.0, max: 48.0}
+  release_delay_hours: {mean: 6.0, sd: 2.0, min: 2.0, max: 24.0}
+  approval_latency_hours: {median: 1.5, sigma: 0.5}
+  merchant_self_serve_delay_hours: {mean: 30.0}
+  processing_release_jitter_hours: 1.0
+  supplier_notice: {accept_prob: 0.6, harm_reduction_if_accepted: 0.7}
+  at_risk_p_miss: 0.05
+  unreachable_p_miss: 0.95
+  action_costs:                       # normalized, illustrative
+    submit_dispute_evidence: 0.02
+    send_supplier_notice: 0.01
+    send_merchant_message: 0.0
+    send_kyc_reminder: 0.005
+  risk_penalty_by_tier: {1: 0.0, 2: 0.0, 3: 0.01, 4: 1.0}
+  stability_runs: 30
+  stability_perturbation: 0.2

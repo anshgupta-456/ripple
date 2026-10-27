@@ -38,7 +38,34 @@ async function j<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface RankedAction {
+  id: string; label: string; steps: string[]; tier: number; permitted: boolean; feasible: boolean;
+  reason: string; p_miss: number; expected_harm: number; cost: number; risk_penalty: number;
+  score: number; decoy: boolean;
+}
+
+export interface Analysis {
+  seed: number;
+  n_samples: number;
+  disposition: string;
+  triggers: string[];
+  conflicts: string[];
+  stability: number;
+  obligation_at_risk: boolean;
+  p_miss_do_nothing: number;
+  due_hours: number | null;
+  graph: { version: number; digest: string };
+  trace: {
+    status: string; path: string[]; root_cause: string | null;
+    edges: { src: string; dst: string; edge_class: string; note: string }[];
+    rejected_edges: { src: string; dst: string; edge_class: string; note: string }[];
+  };
+  ranked: RankedAction[];
+  chosen: RankedAction;
+}
+
 export const api = {
+  analyze: () => j<Analysis>("/api/session/analyze", {}),
   scenarios: () => j<ScenarioInfo[]>("/api/scenarios"),
   state: () => j<SessionState>("/api/session/state"),
   reset: (family: string) => j<SessionState>("/api/session/reset", { family }),

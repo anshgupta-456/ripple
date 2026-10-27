@@ -1,5 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ScenarioInfo, SessionState, WorldEvent } from "./api";
+import { Analysis, api, ScenarioInfo, SessionState, WorldEvent } from "./api";
+
+function AnalysisCard({ a }: { a: Analysis }) {
+  return (
+    <div className="space-y-3 text-sm">
+      <p>
+        <b>{a.chosen.label}</b> · disposition <code>{a.disposition}</code> · stability {(a.stability * 100).toFixed(0)}% ·
+        seed {a.seed} · graph v{a.graph.version} · P(miss | do nothing) {(a.p_miss_do_nothing * 100).toFixed(0)}%
+        {a.triggers.length > 0 && <> · triggers: {a.triggers.join(", ")}</>}
+      </p>
+      <p className="font-mono text-xs">
+        trace ({a.trace.status}): {a.trace.path.join(" ← ")}
+      </p>
+      {a.trace.rejected_edges.map((e, i) => (
+        <p key={i} className="rounded border border-dashed border-amber-400 px-2 py-1 text-xs text-amber-800 dark:text-amber-300">
+          rejected {e.edge_class} edge {e.src} → {e.dst}: {e.note}
+        </p>
+      ))}
+      <table className="w-full text-left text-xs">
+        <thead className="text-slate-500">
+          <tr><th>Action</th><th>Tier</th><th>P(miss)</th><th>E[harm]</th><th>Score</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          {a.ranked.map((r) => (
+            <tr key={r.id} className={r.id === a.chosen.id ? "font-semibold" : r.decoy ? "text-slate-500 line-through decoration-dashed" : ""}>
+              <td className="pr-2">{r.label}</td><td>{r.tier}</td>
+              <td>{(r.p_miss * 100).toFixed(0)}%</td><td>{r.expected_harm.toFixed(3)}</td>
+              <td>{r.score.toFixed(3)}</td><td className="text-slate-500">{r.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 const DOCS = ["invoice", "delivery_proof", "customer_comm"];
 
@@ -33,6 +67,7 @@ export default function App() {
   const [family, setFamily] = useState("missing_evidence_flagship");
   const [log, setLog] = useState("");
   const [live, setLive] = useState(false);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   const refresh = useCallback(async () => setState(await api.state()), []);
@@ -102,6 +137,14 @@ export default function App() {
             <Card title="Dispute"><Kv data={w?.dispute} /></Card>
             <Card title="KYC"><Kv data={w?.kyc} /></Card>
             <Card title="Supplier obligation"><Kv data={w?.supplier} /></Card>
+          </div>
+
+          <div className="mt-4">
+            <Card title="Decision engine (no actions taken)">
+              <button className="mb-3 rounded bg-indigo-600 px-3 py-1 text-sm text-white"
+                onClick={() => run(async () => setAnalysis(await api.analyze()))}>Analyze current state</button>
+              {analysis ? <AnalysisCard a={analysis} /> : <p className="text-sm text-slate-500">Press Analyze. Re-run after submitting evidence or advancing time.</p>}
+            </Card>
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">

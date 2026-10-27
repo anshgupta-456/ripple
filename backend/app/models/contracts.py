@@ -93,6 +93,7 @@ class Edge(BaseModel):
     dst: str
     edge_class: EdgeClass
     provenance: list[str] = Field(default_factory=list)  # event source_refs
+    note: str = ""
 
 
 def canonical_json(obj: Any) -> str:
