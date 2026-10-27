@@ -18,6 +18,7 @@ from app.audit.log import AuditLog
 from app.baselines.common import LoggedWorld
 from app.bench.adversarial import run_suite
 from app.bench.audit_policy import audit_calls
+from app.bench.lab import ATTACK_TEXTS, PRESETS, run_lab
 from app.bench.templates import CANONICAL_SEED, REGISTRY, InboundMessage, Scenario, generate, write_ground_truth
 from app.config import ROOT, load_config
 from app.executor.executor import Executor
@@ -170,6 +171,12 @@ class FaultBody(BaseModel):
 class SeedBody(BaseModel):
     families: list[str] | None = None
     send_messages: bool = True
+
+
+class LabBody(BaseModel):
+    preset: str = "flagship"
+    message: str | None = None
+    replay: bool = False
 
 
 class NewCaseBody(BaseModel):
@@ -519,3 +526,17 @@ def bench_results() -> dict[str, Any]:
             data.pop("records", None)
             return data
     raise HTTPException(404, "no benchmark results yet: python -m app.bench.run --label dev")
+
+
+# ------------------------------------------------------------------ lab: System C vs RIPPLE, same world, same message
+@app.get("/api/lab/presets")
+def lab_presets() -> dict[str, Any]:
+    return {"presets": [{"id": k, "family": v[0], "description": v[1]} for k, v in PRESETS.items()],
+            "attack_texts": ATTACK_TEXTS}
+
+
+@app.post("/api/lab/run")
+def lab_run(body: LabBody) -> dict[str, Any]:
+    if body.preset not in PRESETS:
+        raise HTTPException(404, f"unknown preset {body.preset}")
+    return run_lab(body.preset, body.message, body.replay)

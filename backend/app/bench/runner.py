@@ -78,6 +78,11 @@ def _release_ts(w: LoggedWorld) -> datetime | None:
 
 
 def run_one(system_key: str, scn: Scenario) -> RunRecord:
+    return execute(system_key, scn)[0]
+
+
+def execute(system_key: str, scn: Scenario):
+    """Run one system on one scenario. Returns (record, world, system) so callers can also inspect the trace."""
     gt = scn.ground_truth
     ex, hz = gt["expected"], gt["harness"]
     w = LoggedWorld(scn.world_spec)
@@ -174,7 +179,7 @@ def run_one(system_key: str, scn: Scenario) -> RunRecord:
 
     rec.blind_retries, rec.memo_built, rec.stability = st.blind_retries, st.memo_built, st.stability
     rec.n_replies, rec.status, rec.notes = len(st.replies), st.status, st.notes
-    return rec
+    return rec, w, sys_
 
 
 def seeds_for(n: int) -> list[int]:
