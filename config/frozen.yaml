@@ -1,8 +1,9 @@
 # RIPPLE frozen configuration. SYNTHETIC / MODELED values only.
 # Every assumption used by the engine, simulator, benchmark and scoreboard lives here.
-# Tag the repo `frozen-v1` before the scored benchmark run; do not edit afterwards.
+# FROZEN at tag `frozen-v1` (2026-10-27). Do not edit parameters, thresholds, policy or baselines after the scored run;
+# a change means a new version (frozen-v2) and a new scored run.
 
-version: "0.2.0-draft"
+version: "1.0.0"
 synthetic_data_banner: "SYNTHETIC DATA. Modeled assumptions, no real merchants or money."
 
 simulation:
