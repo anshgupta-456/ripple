@@ -12,7 +12,7 @@ from app.security import auth
 from app.security.governance import KILL
 from tests.helpers import ADMIN, ANALYST, H, VIEWER
 
-PUBLIC = {"/api/health", "/api/config/public", "/api/auth/dev-login", "/api/auth/personas"}
+PUBLIC = {"/api/health", "/api/config/public", "/api/auth/dev-login", "/api/auth/personas", "/api/auth/oidc-config"}
 MSG = "mera settlement kyun ruka hai? Tuesday ko supplier ko paisa dena hai."
 
 
