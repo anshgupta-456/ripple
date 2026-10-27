@@ -139,8 +139,16 @@ def verify_token(token: str) -> User:
             st = _settings()
             key = _jwks_client(st).get_signing_key_from_jwt(token).key
             # some IdPs (Auth0) put a trailing slash in iss; accept either form of the ONE configured issuer
-            claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], issuer=[st.issuer, st.issuer + "/"],
-                                audience=st.audience, options={"require": ["exp", "iat", "sub"]})
+            if st.audience_claim == "client_id":
+                # Amazon Cognito style: the access token has no `aud`; the app client id is in `client_id`. Signature, issuer and expiry
+                # are still checked by the library; the audience check is done here, exactly, and ID tokens (no client_id, token_use=id) fail it.
+                claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], issuer=[st.issuer, st.issuer + "/"],
+                                    options={"require": ["exp", "iat", "sub"], "verify_aud": False})
+                if claims.get("client_id") != st.audience or claims.get("token_use", "access") != "access":
+                    raise AuthError("invalid token: InvalidAudienceError")
+            else:
+                claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], issuer=[st.issuer, st.issuer + "/"],
+                                    audience=st.audience, options={"require": ["exp", "iat", "sub"]})
         else:
             raise AuthError("unsupported token algorithm")
     except AuthError:

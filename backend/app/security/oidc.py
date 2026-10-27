@@ -48,6 +48,7 @@ class OidcSettings:
     role_map: dict[str, str] = field(default_factory=dict, hash=False)
     tenant_claim: str | None = None
     allowed_hosts: frozenset[str] = frozenset()
+    audience_claim: str = "aud"          # "client_id" for providers (Amazon Cognito) whose access tokens carry client_id instead of aud
 
 
 def oidc_settings() -> OidcSettings | None:
@@ -61,6 +62,9 @@ def oidc_settings() -> OidcSettings | None:
             raise ValueError("not an object")
     except ValueError:
         raise OidcError("RIPPLE_OIDC_ROLE_MAP must be a JSON object")
+    aud_claim = os.environ.get("RIPPLE_OIDC_AUDIENCE_CLAIM", "").strip() or "aud"
+    if aud_claim not in ("aud", "client_id"):
+        raise OidcError("RIPPLE_OIDC_AUDIENCE_CLAIM must be 'aud' or 'client_id'")
     hosts = frozenset(h.strip().lower() for h in os.environ.get("RIPPLE_OIDC_ALLOWED_HOSTS", "").split(",") if h.strip())
     return OidcSettings(
         issuer=iss, audience=aud, client_id=os.environ.get("RIPPLE_OIDC_CLIENT_ID", "").strip() or None,
@@ -68,7 +72,8 @@ def oidc_settings() -> OidcSettings | None:
         auth_params=os.environ.get("RIPPLE_OIDC_AUTH_PARAMS", "").strip(),
         roles_claim=os.environ.get("RIPPLE_OIDC_ROLES_CLAIM", "").strip() or "roles",
         role_map={str(k): str(v) for k, v in role_map.items()},
-        tenant_claim=os.environ.get("RIPPLE_OIDC_TENANT_CLAIM", "").strip() or None, allowed_hosts=hosts)
+        tenant_claim=os.environ.get("RIPPLE_OIDC_TENANT_CLAIM", "").strip() or None, allowed_hosts=hosts,
+        audience_claim=aud_claim)
 
 
 def check_url(url: str, what: str, allowed_hosts: set[str] | frozenset[str] | None = None, issuer_host: str | None = None) -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +16,7 @@ from pydantic import BaseModel
 
 from app.agent.orchestrator import Orchestrator
 from app.analysis import analyze_world
+from app.audit import anchor as audit_anchor
 from app.audit.log import AuditLog
 from app.baselines.common import LoggedWorld
 from app.bench.adversarial import run_suite
@@ -41,6 +44,7 @@ app = FastAPI(title="RIPPLE", version="0.7.0", docs_url=None if not is_dev() els
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"] if is_dev() else [], allow_methods=["GET", "POST", "DELETE"],
                    allow_headers=["Authorization", "Content-Type"])
 install_log_scrubber()
+audit_anchor.from_env()   # RIPPLE_AUDIT_ANCHOR: a malformed setting stops startup rather than silently disabling anchoring
 configure_from_env()      # RIPPLE_SECRETS_BACKEND=vault|aws; a misconfigured backend stops the app from starting (fail closed)
 
 
@@ -62,7 +66,7 @@ class Session:
     def __init__(self, scenario: Scenario, tenant: str = "demo", creator: str = "system"):
         self.id = uuid.uuid4().hex[:8]
         self.scenario, self.tenant, self.creator = scenario, tenant, creator
-        self.created = time.time()
+        self.created = self.touched = time.time()
         self.world = LoggedWorld(scenario.world_spec)      # tool-layer call log feeds the live unsafe-action audit
         for tool, mode in scenario.ground_truth.get("harness", {}).get("faults", []):   # environment faults (demo harness)
             self.world.inject_fault(tool, mode)
@@ -75,7 +79,7 @@ class Session:
         self.firewall = Firewall(self.approvals, self.consents, self.audit)
         self.executor = Executor(self.world, self.firewall, self.audit, self.approvals, self.consents)
         self.agent = Orchestrator(self.world, self.executor, self.firewall, self.approvals, self.consents, self.audit,
-                                  self.case_id, scenario.seed, LLM())
+                                  self.case_id, scenario.seed, LLM(tenant=tenant))
 
     @property
     def merchant_id(self) -> str:
@@ -95,9 +99,45 @@ SESSIONS: dict[str, Session] = {}
 ACTIVE: dict[str, str] = {}            # tenant -> most recent session id (convenience default)
 
 
+_SESSION_LOCK = threading.Lock()
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except ValueError:
+        return default
+
+
+def _drop(sid: str) -> None:
+    s = SESSIONS.pop(sid, None)
+    if s is None:
+        return
+    s.delete_files()
+    if ACTIVE.get(s.tenant) == sid:
+        ACTIVE.pop(s.tenant, None)
+
+
+def evict_sessions(now: float | None = None, keep: str | None = None) -> list[str]:
+    """Bound memory and exposure: drop cases idle longer than RIPPLE_SESSION_TTL seconds (default 4 h), then the least recently used
+    beyond RIPPLE_MAX_SESSIONS (default 500). Their audit files go with them (the retention purge covers any left behind)."""
+    now = time.time() if now is None else now
+    ttl, cap = _env_int("RIPPLE_SESSION_TTL", 4 * 3600), _env_int("RIPPLE_MAX_SESSIONS", 500)
+    with _SESSION_LOCK:
+        gone = [sid for sid, s in SESSIONS.items() if sid != keep and now - s.touched > ttl]
+        rest = sorted((s for sid, s in SESSIONS.items() if sid not in gone and sid != keep), key=lambda x: x.touched)
+        excess = len(SESSIONS) - len(gone) - cap
+        gone += [s.id for s in rest[:max(0, excess)]]
+        for sid in gone:
+            _drop(sid)
+    return gone
+
+
 def _add(s: Session) -> Session:
-    SESSIONS[s.id] = s
-    ACTIVE[s.tenant] = s.id
+    with _SESSION_LOCK:
+        SESSIONS[s.id] = s
+        ACTIVE[s.tenant] = s.id
+    evict_sessions(keep=s.id)
     return s
 
 
@@ -111,9 +151,11 @@ def _visible(user: User, s: Session) -> bool:
 
 def _lookup(user: User, sid: str | None) -> Session:
     sid = sid or ACTIVE.get(user.tenant)
+    evict_sessions()
     s = SESSIONS.get(sid) if sid else None
     if s is None or not _visible(user, s):
         raise HTTPException(404, "no such case")
+    s.touched = time.time()
     return s
 
 
@@ -390,7 +432,7 @@ def audit(ctx: tuple[User, Session] = Depends(case_dep("audit.read"))) -> list[d
 @app.get("/api/audit/verify")
 def audit_verify(ctx: tuple[User, Session] = Depends(case_dep("audit.verify"))) -> dict[str, Any]:
     s = ctx[1]
-    return {"memory": s.audit.verify(), "file": s.audit.verify_file()}
+    return {"memory": s.audit.verify(), "file": s.audit.verify_file(), "anchor": s.audit.anchor_report()}
 
 
 # ------------------------------------------------------------------ demo controls (dev only)
@@ -652,7 +694,7 @@ def killswitch_set(body: KillBody, user: User = Depends(require("killswitch.set"
 @app.get("/api/admin/security-log")
 def security_log(user: User = Depends(require("audit.verify"))) -> dict[str, Any]:
     log = get_security_log()
-    return {"verify": log.verify(), "entries": log.dump()[-100:]}
+    return {"verify": log.verify(), "anchor": log.anchor_report(), "entries": log.dump()[-100:]}
 
 
 @app.exception_handler(Exception)

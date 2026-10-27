@@ -39,7 +39,8 @@ Browser (SPA)                         IdP                                 RIPPLE
 | Variable | Meaning |
 |---|---|
 | `RIPPLE_OIDC_ISSUER` | issuer URL, https (plain http only for loopback in `RIPPLE_ENV=dev`) |
-| `RIPPLE_OIDC_AUDIENCE` | the `aud` the **access token** must carry (your API identifier) |
+| `RIPPLE_OIDC_AUDIENCE` | the `aud` the **access token** must carry (your API identifier). With `RIPPLE_OIDC_AUDIENCE_CLAIM=client_id`: the app client id the token's `client_id` must equal |
+| `RIPPLE_OIDC_AUDIENCE_CLAIM` | `aud` (default) or `client_id` for providers whose access tokens have no `aud` (Amazon Cognito). In `client_id` mode the API also requires `token_use` to be `access` (ID tokens are refused); signature, issuer and expiry are checked as always |
 | `RIPPLE_OIDC_CLIENT_ID` | the SPA's public client id. Setting it turns on the browser sign-in |
 | `RIPPLE_OIDC_SCOPE` | default `openid profile` |
 | `RIPPLE_OIDC_AUTH_PARAMS` | extra authorize parameters, urlencoded, e.g. `audience=ripple-api`. Cannot override state, nonce, PKCE, redirect_uri, client_id, scope |
@@ -69,7 +70,7 @@ RIPPLE roles are `viewer`, `analyst`, `merchant`, `admin`. A token with no recog
 | Auth0 | pass `RIPPLE_OIDC_AUTH_PARAMS=audience=<API identifier>`. Custom claims must be namespaced URLs: set the claim env vars to that exact URL |
 | Okta | use a custom authorization server so `aud` is your API; add a `groups` claim and map it with `RIPPLE_OIDC_ROLE_MAP` |
 | Microsoft Entra ID | register the redirect as **Single-page application**; use v2 tokens with an API scope; roles come from app roles in the `roles` claim |
-| Amazon Cognito | **not supported as-is**: its access tokens carry `client_id` instead of `aud`, which this API rejects. It needs a small code change (validate `client_id`) before use |
+| Amazon Cognito | set `RIPPLE_OIDC_AUDIENCE_CLAIM=client_id` and `RIPPLE_OIDC_AUDIENCE=<app client id>`. Issuer is `https://cognito-idp.<region>.amazonaws.com/<pool id>`; the hosted-UI authorize/token endpoints are on a different host (`<domain>.auth.<region>.amazoncognito.com`), so add it to `RIPPLE_OIDC_ALLOWED_HOSTS`. Groups arrive as `cognito:groups`: set `RIPPLE_OIDC_ROLES_CLAIM=cognito:groups` and map them with `RIPPLE_OIDC_ROLE_MAP`. Access tokens carry no custom attributes by default, so the tenant needs a token-customisation trigger or a `RIPPLE_OIDC_TENANT_CLAIM` your pool actually emits. **Tested against a mock that mimics the token shape, not against a real pool** |
 
 ## Try it locally with the mock IdP
 ```

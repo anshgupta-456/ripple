@@ -72,6 +72,7 @@ class IdpConfig:
     advertise_pkce: list[str] | None = field(default_factory=lambda: ["S256"])
     omit_roles: bool = False
     literal_claim_names: bool = False                 # keep dots in claim names (Auth0-style namespaced claims)
+    cognito_style: bool = False                       # access token carries client_id + token_use=access and NO aud (Amazon Cognito)
 
 
 _POOL: list[Any] = []
@@ -135,9 +136,15 @@ class IdpState:
                     cur = cur.setdefault(part, {})
                 cur[parts[-1]] = roles
         access[c.tenant_claim] = c.tenant
+        if c.cognito_style:
+            access.pop("aud", None)
+            access.pop("azp", None)
+            access.update({"client_id": client_id, "token_use": "access"})
         if "merchant_id" in u:
             access["merchant_id"] = u["merchant_id"]
         idt = {"iss": self.issuer, "sub": access["sub"], "aud": client_id, "iat": now, "exp": now + 300, "name": u["name"]}
+        if c.cognito_style:
+            idt["token_use"] = "id"
         if nonce:
             idt["nonce"] = nonce
         resp = {"access_token": self.sign(access), "id_token": self.sign(idt), "token_type": "Bearer", "expires_in": c.access_ttl,

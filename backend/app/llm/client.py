@@ -35,7 +35,8 @@ CACHE_PATH = ROOT / "data" / "llm_cache.json"
 
 class LLM:
     def __init__(self, mode: str | None = None, cache_path: Path | None = None, client: Any = None,
-                 model: str | None = None):
+                 model: str | None = None, tenant: str = ""):
+        self.tenant = tenant                   # part of every cache key: one tenant's cached output never answers another tenant
         self.mode = (mode or os.environ.get("RIPPLE_LLM", "auto")).lower()
         self.model = model or os.environ.get("RIPPLE_LLM_MODEL", DEFAULT_MODEL)
         self.cache_path = cache_path or CACHE_PATH
@@ -54,7 +55,7 @@ class LLM:
         return self._cache
 
     def _key(self, task: str, system: str, user: str) -> str:
-        return hashlib.sha256(json.dumps([self.model, task, system, user]).encode()).hexdigest()
+        return hashlib.sha256(json.dumps([self.tenant, self.model, task, system, user]).encode()).hexdigest()
 
     def _save(self) -> None:
         try:

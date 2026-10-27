@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,7 @@ class AuditLog:
     def __init__(self, path: Path | None = None, secret: str | None = None):
         self.entries: list[AuditEntry] = []
         self.path = path
+        self.log_id = f"{path.name if path else 'memory'}#{uuid.uuid4().hex[:8]}"     # names this chain in external anchors (one per process run)
         if secret is None:
             secret = get_secret("RIPPLE_AUDIT_KEY", required=path is not None, dev_ephemeral=True) if path else None
         self._secret = secret or hashlib.sha256(repr(id(self)).encode() + b"mem").hexdigest()
@@ -81,7 +83,24 @@ class AuditLog:
             line = self._fernet.encrypt(e.model_dump_json().encode()).decode()
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
+            from app.audit import anchor
+            a = anchor.from_env()
+            if a:
+                a.maybe(self.log_id, e.seq, e.mac, e.ts.isoformat())
         return e
+
+    def anchor_report(self) -> dict[str, Any]:
+        """Is the head published somewhere the app cannot rewrite, and does this log still match what was published?"""
+        from app.audit import anchor
+        a = anchor.from_env()
+        if a is None:
+            return {"configured": False, "note": "no external anchor: truncating the end of the log would go unnoticed (RIPPLE_AUDIT_ANCHOR)"}
+        out = {**a.status(), "log": self.log_id}
+        if isinstance(a.sink, anchor.FileSink):
+            out["check"] = anchor.check_anchors(self.entries, a.sink.read(self.log_id))
+        else:
+            out["check"] = {"ok": None, "note": "anchors are held by the remote collector; compare there"}
+        return out
 
     # ---- integrity ----
     def verify(self) -> dict[str, Any]:
