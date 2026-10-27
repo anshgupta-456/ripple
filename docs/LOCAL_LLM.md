@@ -34,19 +34,21 @@ A small CPU model is a fallback, not a peer of Claude, so it is boxed in:
 - A model that is not running, slow, or returns junk means the rules answer. Nothing breaks.
 
 ## Measured, honestly
-Real run on this laptop (7 GB RAM, no usable GPU, CPU only) with the installed `qwen2.5vl:3b` (a 3B vision-language model, used for text), on the 24 of the 120 labelled messages where the rules are unsure ([INTAKE_EVAL.md](INTAKE_EVAL.md); raw rows in `docs/intake_local_eval.json`, command `python -m app.intake.evaluate_local`):
+Real runs on this laptop (7 GB RAM, no usable GPU, CPU only) on the 24 of the 120 labelled messages where the rules are unsure ([INTAKE_EVAL.md](INTAKE_EVAL.md); command `python -m app.intake.evaluate_local`; raw rows in `docs/intake_local_eval.json` and `docs/intake_local_eval_qwen2.5-3b.json`). "Helped" means the rules were wrong and the model right; "hurt" the reverse.
 
-| | Messages |
-|---|---|
-| Local model helped (rules wrong, model right) | 2 before the vocabulary gate, **0 after** |
-| Local model hurt (rules right, model wrong) | 2 before the gate, **0 after** |
-| Still wrong, no worse than before (unsure rules, wrong read-only intent) | 3 (two of them attacks the rules also missed, answered as a status question) |
-| No usable suggestion (it said "other", or a non-suggestable intent) | 15 |
-| Time per call | median 5.4 s warm; a cold load of the model took over 100 s, which is why it is kept loaded and warmed at startup |
+| | `qwen2.5vl:3b` (3B vision model) | `qwen2.5:3b` (3B text model, 1.9 GB) |
+|---|---|---|
+| Helped | 2 before the payments-vocabulary gate, **0 after** | **0** |
+| Hurt | 2 before the gate, **0 after** | **0** |
+| Wrong suggestion, no worse than rules' "other" | 3 (two were attacks, answered as a status question) | 2 (a refund/ETA guess on two payment questions) |
+| No suggestion (said "other", or a non-suggestable intent) | 15 | 22 (including all 3 attacks and every genuinely unrelated message) |
+| Median time per call | 5.4 s | 6.4 s (one cold load took 77 s) |
 
-The vocabulary gate was chosen **after** seeing these results and its effect was computed offline from the same recorded model outputs, so it is not an independent measurement.
+The vocabulary gate was chosen **after** seeing the first model's results and applied offline to those recorded outputs, so that column is not an independent measurement; the `qwen2.5:3b` column ran with the gate in place.
 
-**Plain reading: with this particular model the local fallback is close to neutral. It is safe and free, it never makes things worse, but it adds almost no accuracy; the deterministic rules are doing the real work.** A 3B vision model is not the best choice for text classification. A small *text* model (for example `qwen2.5:3b` or `llama3.2:3b`, about 2 GB) would probably do better and is the first thing to try; it was not downloaded or measured here. A 7B or 8B model does not fit comfortably in this machine's memory (`qwen3-vl:8b` is installed but is skipped by default because it is a slow thinking model).
+**Plain reading: neither 3B model helps, and the text model is not better.** Both are safe and free and never make things worse. The text model is more conservative (it says "other" about everything it cannot place, so it makes fewer wrong guesses, and it correctly stays out of the attack messages), but it also recovers none of the messages the rules miss: it answered "other" even for "how many more days". The rules miss exactly the awkward phrasings that a model this small also cannot place. The slice is small (24 messages, about 8 of them recoverable), so this cannot separate the two models; it does say a 3B model on a laptop CPU is not the way to improve intake. A 7B-class model does not fit comfortably in this machine's memory (`qwen3-vl:8b` is installed but skipped by default as a slow thinking model). Better routes for accuracy: fix the rule gaps listed in INTAKE_EVAL.md, or use Claude.
+
+With `qwen2.5:3b` installed, the auto-pick now chooses it (it is first in the preference list). Its cold start (up to about 77 s) is longer than the default 25 s timeout, so the first call after the model has been unloaded is skipped and the breaker pauses the provider for a minute; the background warm-up at startup and `keep_alive` avoid this in normal use.
 
 ## Limits
 - The local model's **reply rewording** is off by default and untested live.

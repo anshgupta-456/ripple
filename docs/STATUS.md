@@ -37,7 +37,7 @@ Autonomy is a tie with the plain agent; the plain agent is cheaper in the modele
 Cannot be done from this machine, needs you or outside systems:
 - Run against a hosted identity provider over https, a real Vault or AWS account, and a live model (needs credentials and endpoints).
 - Held-out scenarios written by someone other than the author (the benchmark is self-authored).
-- Try a small text model for the local fallback (`ollama pull qwen2.5:3b`, about 2 GB) and re-run `python -m app.intake.evaluate_local`.
+- Fix the intake rule gaps (INTAKE_EVAL.md): the local 3B models do not recover them.
 - A backup screen recording of the demo.
 - Durable storage: cases live in memory and a restart wipes them; only meaningful once real source systems exist.
 
@@ -55,7 +55,7 @@ Cannot be done from this machine, needs you or outside systems:
 | Demo rehearsal script (`scripts/demo_check.py`) | **Done**: five rounds, every beat asserted, about 2 s a round in-process. Does not check how pages look |
 | Pitch deck | **Done**: 8 slides with speaker notes in a private shared deck (link in the session); numbers come from the frozen benchmark and the intake evaluation |
 
-| Free local model fallback (Ollama) | **Done and tested** (57 tests incl. mutation-checked network guards; live on this laptop and from the container). **Measured: safe but close to neutral** with the installed 3B vision model; a small text model is untried: [LOCAL_LLM.md](LOCAL_LLM.md) |
+| Free local model fallback (Ollama) | **Done and tested** (57 tests incl. mutation-checked network guards; live on this laptop and from the container). **Measured on two models (3B vision and 3B text, `qwen2.5:3b`): both safe, neither improves accuracy** (0 helped, 0 hurt on the 24 messages the rules are unsure about): [LOCAL_LLM.md](LOCAL_LLM.md) |
 | Admin "Language model" card and `/api/admin/llm` | **Done** |
 | Security-event log survives restarts (set aside, not deleted, if unreadable) | **Done and tested** |
 
