@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { Card, usePolling } from "./components/ui";
-import ScoreboardCard from "./components/ScoreboardCard";
+import { usePolling } from "./components/ui";
 import Approvals from "./pages/Approvals";
 import CasePage from "./pages/CasePage";
 import Console from "./pages/Console";
+import Lab from "./pages/Lab";
+import Scoreboard from "./pages/Scoreboard";
 
 function useHash(): string {
   const [h, setH] = useState(location.hash || "#/");
@@ -16,7 +17,7 @@ function useHash(): string {
   return h;
 }
 
-const NAV: [string, string][] = [["#/", "Ops Console"], ["#/approvals", "Approvals"], ["#/scoreboard", "Scoreboard"]];
+const NAV: [string, string][] = [["#/", "Ops Console"], ["#/approvals", "Approvals"], ["#/scoreboard", "Scoreboard"], ["#/lab", "Lab"]];
 
 export default function App() {
   const hash = useHash();
@@ -29,7 +30,8 @@ export default function App() {
   let page;
   if (route === "case" && arg) page = <CasePage sid={arg} />;
   else if (route === "approvals") page = <Approvals />;
-  else if (route === "scoreboard") page = <Card title="Scoreboard"><ScoreboardCard /></Card>;
+  else if (route === "scoreboard") page = <Scoreboard />;
+  else if (route === "lab") page = <Lab />;
   else page = <Console />;
   const active = route === "case" ? "#/" : `#/${route ?? ""}`;
 
