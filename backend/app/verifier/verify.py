@@ -55,6 +55,13 @@ def verify_action(action: Action, pre: dict[str, Any], read: Callable[[str], Any
         ok = k["reminders_sent"] > pre.get("kyc", {}).get("reminders_sent", 0)
         return Verification(state=V.VERIFIED if ok else V.FAILED,
                             reason="reminder recorded" if ok else "no new reminder at source", source_snapshot=k)
+    if t == "schedule_follow_up":
+        e, err = _safe(read, "read_ext_state")
+        if err:
+            return Verification(state=V.UNKNOWN, reason=err)
+        ok = len(e["followups"]) > len((pre.get("ext") or {}).get("followups", []))
+        return Verification(state=V.VERIFIED if ok else V.FAILED, reason="follow-up scheduled at source" if ok else "no new follow-up at source",
+                            source_snapshot=e)
     return Verification(state=V.UNKNOWN, reason=f"no verifier for {t}")
 
 

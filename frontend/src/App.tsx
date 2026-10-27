@@ -7,6 +7,7 @@ import Approvals from "./pages/Approvals";
 import CasePage from "./pages/CasePage";
 import Console from "./pages/Console";
 import Lab from "./pages/Lab";
+import Portfolio from "./pages/Portfolio";
 import Scoreboard from "./pages/Scoreboard";
 
 function useHash(): string {
@@ -22,7 +23,7 @@ function useHash(): string {
 // [href, label, permission required to see it]
 const NAV: [string, string, string][] = [
   ["#/", "Ops Console", "console.read"], ["#/approvals", "Approvals", "approval.read"], ["#/scoreboard", "Scoreboard", "bench.read"],
-  ["#/lab", "Lab", "lab.run"], ["#/admin", "Admin", "killswitch.set"],
+  ["#/portfolio", "Portfolio", "console.read"], ["#/lab", "Lab", "lab.run"], ["#/admin", "Admin", "killswitch.set"],
 ];
 
 export default function App() {
@@ -48,6 +49,7 @@ export default function App() {
   if (route === "case" && arg) page = can("case.read") ? <CasePage sid={arg} /> : null;
   else if (route === "approvals") page = <Approvals />;
   else if (route === "scoreboard") page = <Scoreboard />;
+  else if (route === "portfolio") page = <Portfolio />;
   else if (route === "lab") page = can("lab.run") ? <Lab /> : null;
   else if (route === "admin") page = can("killswitch.set") ? <Admin /> : null;
   else page = can("console.read") ? <Console /> : null;

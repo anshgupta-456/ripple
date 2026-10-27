@@ -41,7 +41,17 @@ export interface CaseView {
   messages: CaseMessage[]; steps: CaseStep[]; plan: PlannedAction[]; memo: Memo | null; report: Report | null;
   resolution: { state: string; reason: string } | null; pending: string[];
   bundle: { docs: string[]; dispute_id: string } | null;
+  ledger?: LedgerRow[]; decisions?: DecisionRow[]; outcomes?: OutcomeRow[]; followups?: FollowupRow[];
 }
+export interface LedgerRow { id: string; counterparty: string | null; amount: number | null; due_text: string | null; due_at: string | null; confidence: number; confirmed: number; linked_node: string | null; funded_by: string | null; status: string }
+export interface DecisionRow { decision_id: string; graph_version: number; seed: number; chosen: string; tier_result: string; stability: number; p_miss: number; disposition: string; scores: { id: string; score: number; p_miss: number; tier: number }[] }
+export interface OutcomeRow { action_type: string; risk_before: number | null; risk_after: number | null; verdict: string }
+export interface FollowupRow { id: string; due_at: string; reason: string; status: string }
+export interface PortfolioResult { illustrative: boolean; n: number; seed: number; note: string; planted_distribution: Record<string, number>; totals: { at_risk: number; escalate: number; cascades_prevented: number };
+  ranked: { root_cause: string; upstream_fix: string; merchants: number; at_risk: number; cascades_prevented: number; effort: number; prevented_per_effort: number; amount_protected: number }[];
+  by_family: Record<string, { merchants: number; at_risk: number; escalate: number; traced_cause: string }> }
+export interface Sensitivity { note: string; cost: { n: number; E_cheaper_than_C_in: number; grid: Record<string, number[]> };
+  harm: { scenario: string; runs: number; E: Record<string, number | null>; C: Record<string, number | null> }[] }
 export interface CaseSummary {
   sid: string; case_id: string; merchant: string; family: string; intent: string; language: string; status: string;
   closed: boolean; waiting_on: string | null; tier_max: number; hours_to_deadline: number | null; at_risk: boolean;
@@ -165,6 +175,16 @@ export const api = {
   audit: (sid?: string) => j<AuditEntry[]>(q("/api/audit", sid)),
   // benchmark + safety
   bench: () => j<BenchResults>("/api/bench/results"),
+  portfolio: () => j<PortfolioResult>("/api/portfolio"),
+  sensitivity: () => j<Sensitivity>("/api/bench/sensitivity"),
+  benchCsv: async () => {
+    const res = await fetch("/api/bench/export.csv", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error(`${res.status}: export failed`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url; a.download = "ripple_benchmark.csv"; a.click();
+    URL.revokeObjectURL(url);
+  },
   adversarial: () => j<AdversarialSummary>("/api/adversarial/run", {}),
   // lab
   labPresets: () => j<LabPresets>("/api/lab/presets"),

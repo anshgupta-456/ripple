@@ -158,4 +158,10 @@ class Firewall:
             if t == "text":
                 if not (isinstance(v, str) and 1 <= len(v) <= s.get("max_len", 800)):
                     return f"{name} must be 1..{s.get('max_len', 800)} characters"
+            if t == "int_range":
+                if not (isinstance(v, int) and not isinstance(v, bool) and s["min"] <= v <= s["max"]):
+                    return f"{name} must be a whole number from {s['min']} to {s['max']}"
+            if t == "enum":
+                if v not in s["values"]:
+                    return f"{name} must be one of {s['values']}"
         return None

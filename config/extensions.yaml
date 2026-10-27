@@ -1,0 +1,9 @@
+# Settings for the v3 P3 portfolio view, added after the v1 benchmark freeze. Kept apart from frozen.yaml so that file stays byte-for-byte
+# unchanged. Every number is an ASSUMPTION for a synthetic demo, not a finding.
+version: 1
+
+portfolio:
+  merchants: 200
+  seed: 20261027
+  samples: 400                 # Monte Carlo samples per merchant (the decision engine default is 2000; lowered for 200 merchants)
+  effort: {1: 1.0, 2: 2.0, 3: 3.0}     # relative effort of an action by its tier

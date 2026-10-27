@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, AuditEntry, CaseView, Report, SessionState } from "../api";
 import ChatPanel from "../components/ChatPanel";
-import { ActionLog, ContextPanel, RankedTable, StateLadder, WhyDrawer } from "../components/CasePanels";
+import { ActionLog, ContextPanel, LedgerPanel, RankedTable, RecordsPanel, StateLadder, WhyDrawer } from "../components/CasePanels";
 import TraceGraph from "../components/TraceGraph";
 import { useAuth } from "../auth";
 import { Btn, Card, ErrorNote, Mono, StatusChip, usePolling } from "../components/ui";
@@ -83,6 +83,9 @@ export default function CasePage({ sid }: { sid: string }) {
             {report ? <div className="space-y-3"><RankedTable ranked={report.ranked} chosenId={report.chosen.id} /><WhyDrawer r={report} /></div>
               : <p className="text-sm text-slate-500">Nothing to rank yet.</p>}
           </Card>
+
+          <Card title="Promise ledger"><LedgerPanel rows={c?.ledger ?? []} /></Card>
+          <Card title="Decision records (SQLite)"><RecordsPanel decisions={c?.decisions ?? []} outcomes={c?.outcomes ?? []} followups={c?.followups ?? []} /></Card>
 
           {approval && c && can("approval.decide") && (
             <Card title="Analyst decision needed">

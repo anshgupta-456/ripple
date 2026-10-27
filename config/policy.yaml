@@ -10,6 +10,7 @@ reads:   # read-only tools, tier 1, no parameters
   - read_supplier_obligation
   - read_refund
   - read_notifications
+  - read_ext_state          # internal follow-ups (extensions only)
 
 actions:
   submit_dispute_evidence:
@@ -33,6 +34,14 @@ actions:
     max_per_case: 1
     requires: kyc_opt_in        # merchant must already have opted in
     params: {}
+
+  # ---- v3 Tier 1 'schedule internal recheck'; added after the v1 freeze, only present in worlds with extensions ----
+  schedule_follow_up:
+    tier: 1
+    max_per_case: 2
+    params:
+      hours: {type: int_range, min: 1, max: 72}
+      reason: {type: enum, values: [check_dispute, check_kyc, check_settlement]}
 
 # Named so denials are explicit and audited. None of these has an executable tool.
 forbidden:

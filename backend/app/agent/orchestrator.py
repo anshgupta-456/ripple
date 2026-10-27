@@ -77,7 +77,8 @@ class CaseState(BaseModel):
 class Orchestrator:
     def __init__(self, world: World, executor: Executor, firewall: Firewall, approvals: ApprovalStore,
                  consents: ConsentStore, audit: AuditLog, case_id: str, seed: int, llm: LLM | None = None,
-                 trace_mode: str = "reverse"):
+                 trace_mode: str = "reverse", rec: Any = None):
+        self.rec = rec          # optional app.ext.records.Records: SQLite decision records and the promise ledger; never read by the engine
         self.w, self.ex, self.fw = world, executor, firewall
         self.approvals, self.consents, self.audit = approvals, consents, audit
         self.seed, self.llm = seed, llm
@@ -120,6 +121,8 @@ class Orchestrator:
                        p_miss_do_nothing=r.p_miss_do_nothing, triggers=r.triggers, trace_status=r.trace.status.value,
                        root_cause=r.trace.root_cause, rejected_edges=[e["src"] for e in r.trace.rejected_edges],
                        trace_mode=self.trace_mode)
+        if self.rec:
+            self.rec.decision(r)
         return r
 
     def _say(self, kind: str, **facts: Any) -> ExecResult | None:
@@ -193,6 +196,8 @@ class Orchestrator:
             self._say("resolved_released", amount=inr(amt))
             s.closed = True
             self._set_status(CaseStatus.VERIFIED)
+            if self.rec:
+                self.rec.set_promise_status("closed")
         elif v.state == VerificationState.FAILED:
             self._escalate("Evidence was submitted but the hold is still active without a pending review", "")
         else:
@@ -240,10 +245,15 @@ class Orchestrator:
                          "hindi": "समाप्त होने से पहले नवीनीकरण करा लें; यह किसी सेटलमेंट होल्ड से अलग है।"}[self.s.language]
         status_word = {"valid": "valid", "expiring": "expiring soon", "expired": "expired"}[k["status"]]
         res = self._say("kyc_status", kyc_status=status_word, kyc_exp=exp, kyc_extra=extra)
-        if res and res.verified:
+        # KYC is a separate risk: answering it must never close a case that still has a hold, an approval or a consent open.
+        if res and res.verified and not self._other_work_open():
             self._set_status(CaseStatus.AUTO_RESOLVED)
             self.s.closed = True
         return self.s
+
+    def _other_work_open(self) -> bool:
+        s = self.s
+        return bool(s.plan) or s.status in (CaseStatus.WAITING_ANALYST, CaseStatus.WAITING_MERCHANT, CaseStatus.ESCALATED)
 
     def _refund(self) -> CaseState:
         if "read_refund" not in self.w.tools:
@@ -269,6 +279,9 @@ class Orchestrator:
         tl = self._timeline()
         report = self._decide(tl)
         self._prev_graph, s.report = report.graph, report
+        if self.rec:
+            self.rec.promises(intake, report, {"name": tl.val("supplier.name"), "amount": tl.val("supplier.amount"),
+                                               "due_at": str(tl.val("supplier.due_at") or "") or None})
         self._step("Traced cause", " ← ".join(report.trace.path) or "no blocker")
         for e in report.trace.rejected_edges:
             self._step("Rejected non-causal link", f"{e['src']} → {e['dst']} ({e['edge_class']}): {e['note']}")
@@ -353,6 +366,8 @@ class Orchestrator:
                 s.plan.append(p)
         proposed = [{"type": p.action.type, "tier": p.tier, "hash": p.action.hash, "label": p.label} for p in s.plan]
         s.memo = build_memo(intake, text, tl, report, bundle, proposed)
+        if self.rec:
+            self.rec.memo(s.memo, report)
         self._step("Prepared analyst card", f"{len(new)} action(s) pending; memo saves ~{s.memo.minutes_saved} min")
 
         nl = ""
@@ -452,14 +467,27 @@ class Orchestrator:
             p.state = "verified"
             if p.action.type == "send_supplier_notice":
                 self._say("supplier_notice_sent", supplier=self._tl.val("supplier.name") if self._tl else "supplier")
+                if self.rec:
+                    self.rec.set_promise_status("repaired")
             elif p.action.type == "submit_dispute_evidence":
                 self._eta_reply(waiting=True)
+                self._schedule_recheck()
         else:
             p.state, p.note = "failed", (r.verification.reason if r.verification else r.outcome)
             self._say("action_failed")
             self._set_status(CaseStatus.ESCALATED)
+        if self.rec and r.outcome != "denied" and r.verification:
+            self.rec.outcome(p.action.type, r.verification.state.value, self.s.report)
         self._after_plan_change()
         return self.s
+
+    def _schedule_recheck(self) -> None:
+        """v3 Tier 1: schedule an internal recheck. Only in worlds that have the tool (extensions on); it goes through the same firewall."""
+        if "schedule_follow_up" not in self.w.tools:
+            return
+        a = Action(case_id=self.s.case_id, type="schedule_follow_up", params={"hours": 24, "reason": "check_dispute"})
+        r = self.ex.execute(a, self._ctx())
+        self._step("Scheduled internal recheck", f"{r.outcome}, verified={r.verified}")
 
     def _after_plan_change(self) -> None:
         s = self.s
@@ -533,4 +561,5 @@ class Orchestrator:
     def view(self) -> dict[str, Any]:
         s = self.s
         pending = [p for p in s.plan if p.state in ("awaiting_approval", "awaiting_consent")]
-        return s.model_dump(mode="json") | {"pending": [p.action.hash for p in pending]}
+        extra = self.rec.view() if self.rec else {}
+        return s.model_dump(mode="json") | {"pending": [p.action.hash for p in pending]} | extra

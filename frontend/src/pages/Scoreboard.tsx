@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { AdversarialSummary, api, BenchResults, PublicConfig, Rate, SysSummary } from "../api";
+import { useEffect, useState } from "react";
+import { AdversarialSummary, api, BenchResults, PublicConfig, Rate, Sensitivity, SysSummary } from "../api";
 import { Btn, Card, ErrorNote, Mono, usePolling } from "../components/ui";
 
 type Slice = "all" | "tuning" | "held_out";
@@ -185,6 +185,8 @@ export default function Scoreboard() {
         </Card>
       </div>
 
+      <SensitivityCard />
+
       <Card title="Modeled assumptions (all in config/frozen.yaml)">
         {cfg ? (
           <div className="grid gap-4 text-xs md:grid-cols-3">
@@ -204,5 +206,24 @@ export default function Scoreboard() {
       </Card>
       <ErrorNote text={err} />
     </div>
+  );
+}
+
+
+function SensitivityCard() {
+  const [s, setS] = useState<Sensitivity | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => { api.sensitivity().then(setS).catch((e) => setErr(String(e))); }, []);
+  return (
+    <Card title="Sensitivity to the modeled assumptions" right={<Btn onClick={() => api.benchCsv().catch((e) => setErr(String(e)))}>Download scoreboard CSV</Btn>}>
+      {err && <p className="text-xs text-slate-500">{err}</p>}
+      {s && (<div className="space-y-3 text-sm">
+        <p>Cost: full RIPPLE is cheaper than the plain agent in <b>{s.cost.E_cheaper_than_C_in} of {s.cost.n}</b> combinations of cost per human minute, manual minutes per case and memo minutes saved
+          ({Object.entries(s.cost.grid).map(([k, v]) => `${k.replaceAll("_", " ")}: ${v.join(", ")}`).join("; ")}). Which system is cheaper depends on those assumptions, so no cost advantage is claimed.</p>
+        <table className="w-full text-left text-xs"><thead className="uppercase text-slate-500"><tr><th className="pr-3">Harm weights</th><th className="pr-3">E verified</th><th className="pr-3">E unsafe</th><th className="pr-3">E false “resolved”</th><th className="pr-3">E escalation recall</th><th className="pr-3">C verified</th><th>C unsafe</th></tr></thead>
+          <tbody>{s.harm.map((h) => (<tr key={h.scenario} className="border-t border-slate-100 dark:border-slate-800"><td className="py-1 pr-3">{h.scenario}</td><td className="pr-3">{h.E.verified}</td><td className="pr-3">{h.E.unsafe}</td><td className="pr-3">{h.E.false_resolved}</td><td className="pr-3">{h.E.escalation_recall}</td><td className="pr-3">{h.C.verified}</td><td>{h.C.unsafe}</td></tr>))}</tbody></table>
+        <p className="text-xs text-slate-500">Headline metrics did not move when the harm weights were scaled. That can mean the conclusions are robust, or that these scenarios do not exercise the weights; this check cannot tell the two apart. Synthetic results.</p>
+      </div>)}
+    </Card>
   );
 }

@@ -132,3 +132,36 @@ export function ContextPanel({ world, events }: { world: Record<string, any>; ev
     </div>
   );
 }
+
+
+export function LedgerPanel({ rows }: { rows: import("../api").LedgerRow[] }) {
+  if (!rows.length) return <p className="text-sm text-slate-500">No promises tracked yet. A commitment the merchant makes in chat (“Tuesday ko supplier ko paisa dena hai”) becomes an entry here.</p>;
+  const tone: Record<string, string> = { at_risk: "text-amber-700", on_track: "text-emerald-700", repaired: "text-sky-700", closed: "text-emerald-700", unfunded: "text-red-700" };
+  return (
+    <table className="w-full text-left text-sm">
+      <thead className="text-xs uppercase text-slate-500"><tr><th className="pr-2">To</th><th className="pr-2">Amount</th><th className="pr-2">Due</th><th className="pr-2">Confidence</th><th className="pr-2">Funded by</th><th>Status</th></tr></thead>
+      <tbody>{rows.map((r) => (
+        <tr key={r.id} className="border-t border-slate-100 dark:border-slate-800">
+          <td className="py-1 pr-2">{r.counterparty ?? "-"}</td><td className="pr-2">{r.amount ? `Rs ${r.amount.toLocaleString("en-IN")}` : "-"}</td>
+          <td className="pr-2">{r.due_at ? r.due_at.slice(0, 16).replace("T", " ") : r.due_text ?? "-"}</td>
+          <td className="pr-2">{(r.confidence * 100).toFixed(0)}%{r.confirmed ? "" : " (to confirm)"}</td>
+          <td className="pr-2 font-mono text-xs">{r.funded_by ?? "none"}</td><td className={`font-semibold ${tone[r.status] ?? ""}`}>{r.status.replace("_", " ")}</td>
+        </tr>))}</tbody>
+    </table>
+  );
+}
+
+export function RecordsPanel({ decisions, outcomes, followups }: { decisions: import("../api").DecisionRow[]; outcomes: import("../api").OutcomeRow[]; followups: import("../api").FollowupRow[] }) {
+  if (!decisions.length) return <p className="text-sm text-slate-500">No decisions recorded yet.</p>;
+  return (
+    <div className="space-y-3 text-sm">
+      <table className="w-full text-left"><thead className="text-xs uppercase text-slate-500"><tr><th className="pr-2">#</th><th className="pr-2">Chosen</th><th className="pr-2">Tier</th><th className="pr-2">Seed</th><th className="pr-2">Graph v</th><th className="pr-2">Stability</th><th>P(miss | nothing)</th></tr></thead>
+        <tbody>{decisions.map((d, i) => (
+          <tr key={d.decision_id} className="border-t border-slate-100 dark:border-slate-800"><td className="py-1 pr-2">{i + 1}</td><td className="pr-2">{d.chosen.replaceAll("_", " ").toLowerCase()}</td><td className="pr-2">{d.tier_result.replace("tier_", "")}</td>
+            <td className="pr-2 font-mono text-xs">{d.seed}</td><td className="pr-2">{d.graph_version}</td><td className="pr-2">{(d.stability * 100).toFixed(0)}%</td><td>{(d.p_miss * 100).toFixed(0)}%</td></tr>))}</tbody></table>
+      {outcomes.length > 0 && <div><p className="mb-1 text-xs font-semibold uppercase text-slate-500">Outcomes</p>
+        <ul className="space-y-0.5">{outcomes.map((o, i) => <li key={i}><b>{o.action_type.replaceAll("_", " ")}</b>: risk {o.risk_before === null ? "-" : `${(o.risk_before * 100).toFixed(0)}%`} → {o.risk_after === null ? "-" : `${(o.risk_after * 100).toFixed(0)}%`}, <b>{o.verdict}</b></li>)}</ul></div>}
+      {followups.length > 0 && <p className="text-xs text-slate-500">Internal rechecks: {followups.map((f) => `${f.reason.replace("_", " ")} at ${f.due_at.slice(0, 16).replace("T", " ")} (${f.status})`).join("; ")}</p>}
+    </div>
+  );
+}

@@ -24,6 +24,10 @@ from app.bench.audit_policy import audit_calls
 from app.bench.lab import ATTACK_TEXTS, PRESETS, run_lab
 from app.bench.templates import CANONICAL_SEED, REGISTRY, InboundMessage, Scenario, generate, write_ground_truth
 from app.config import ROOT, load_config
+from app.ext.portfolio import cached as portfolio_cached
+from app.ext.records import Records
+from app.ext.sources import attach_ext_sources
+from app.ext.store import get_store
 from app.executor.executor import Executor
 from app.firewall.firewall import Firewall, FirewallContext
 from app.firewall.stores import ApprovalStore, ConsentStore
@@ -78,8 +82,12 @@ class Session:
         self.consents = ConsentStore()
         self.firewall = Firewall(self.approvals, self.consents, self.audit)
         self.executor = Executor(self.world, self.firewall, self.audit, self.approvals, self.consents)
+        self.rec = None
+        if os.environ.get("RIPPLE_EXTENSIONS", "on").lower() != "off":      # v3 records, promise ledger, internal recheck
+            attach_ext_sources(self.world)
+            self.rec = Records(tenant, self.case_id)
         self.agent = Orchestrator(self.world, self.executor, self.firewall, self.approvals, self.consents, self.audit,
-                                  self.case_id, scenario.seed, LLM(tenant=tenant))
+                                  self.case_id, scenario.seed, LLM(tenant=tenant), rec=self.rec)
 
     @property
     def merchant_id(self) -> str:
@@ -93,6 +101,7 @@ class Session:
 
     def delete_files(self) -> None:
         self.audit_path.unlink(missing_ok=True)
+        get_store().delete_case(self.tenant, self.case_id)         # the SQLite records go with the case
 
 
 SESSIONS: dict[str, Session] = {}
@@ -644,13 +653,45 @@ def pending_approvals(user: User = Depends(require("approval.read"))) -> list[di
 @app.get("/api/bench/results")
 def bench_results(user: User = Depends(require("bench.read"))) -> dict[str, Any]:
     """Latest benchmark summary (frozen-v1 if present, else the dev run). Records are omitted to keep it small."""
-    for name in ("bench_frozen-v1.json", "bench_dev.json"):
+    for name in ("bench_frozen-v2.json", "bench_frozen-v1.json", "bench_dev.json"):
         path = ROOT / "data" / "results" / name
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
             data.pop("records", None)
             return data
     raise HTTPException(404, "no benchmark results yet: python -m app.bench.run --label dev")
+
+
+@app.get("/api/portfolio")
+def portfolio(user: User = Depends(require("console.read"))) -> dict[str, Any]:
+    """v3 P3 portfolio view: which upstream fix would prevent the most cascades across 200 SIMULATED merchants (planted distribution)."""
+    return portfolio_cached()
+
+
+@app.get("/api/bench/sensitivity")
+def bench_sensitivity(user: User = Depends(require("bench.read"))) -> dict[str, Any]:
+    f = ROOT / "data" / "results" / "sensitivity_v2.json"
+    if not f.exists():
+        raise HTTPException(404, "no sensitivity results yet: python -m app.bench.sensitivity")
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+@app.get("/api/bench/export.csv")
+def bench_export(user: User = Depends(require("bench.read"))):
+    """Per-system metrics as CSV (v3: 'JSONL/CSV')."""
+    import csv
+    import io
+    from fastapi.responses import Response
+    data = bench_results(user)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["system", "label", "runs", "autonomous_rate", "verified_rate", "escalation_precision", "escalation_recall", "false_escalation_rate",
+                "unsafe_actions", "false_resolved", "cost_per_case_inr", "label_run", "config_version"])
+    for k, v in data["summary"]["all"].items():
+        w.writerow([k, v["label"], v["n_runs"], v["autonomous_resolution_rate"]["rate"], v["verified_resolution_rate"]["rate"],
+                    v["escalation_precision"]["rate"], v["escalation_recall"]["rate"], v["false_escalation_rate"]["rate"], v["unsafe_actions"]["total"],
+                    v["false_resolved"]["k"], v["cost_per_case_inr"]["mean"], data["meta"]["label"], data["meta"]["config_version"]])
+    return Response(buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=ripple_benchmark.csv"})
 
 
 @app.post("/api/adversarial/run")

@@ -8,8 +8,9 @@ NEW = ["duplicate_message", "refund_status", "kyc_reminder", "supplier_promise_u
        "state_unchanged", "conflicting_source_states", "weak_causal_edge", "prompt_injection"]
 
 
-def test_twelve_families_registered():
-    assert len(REGISTRY) == 12 and set(NEW) <= set(REGISTRY)
+def test_fourteen_families_registered():
+    assert len(REGISTRY) == 14 and set(NEW) <= set(REGISTRY)
+    assert {"correlated_kyc_decoy", "deadline_already_passed"} <= set(REGISTRY)      # v3 table rows 6 and 14
 
 
 @pytest.mark.parametrize("family", list(REGISTRY))

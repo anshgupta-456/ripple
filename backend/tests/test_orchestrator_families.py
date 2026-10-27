@@ -77,3 +77,4 @@ def test_local_trace_ablation_mitigates_but_cannot_fix_the_cause():
     s.world.advance(72)
     s.agent.tick()
     assert s.world.settlement.s.status == "held_risk" and not s.agent.s.closed
+

@@ -71,6 +71,7 @@ class World:
             "dispute_decision": lambda _p: self.dispute and self.dispute._decide(),
             "refund_complete": lambda _p: self.refund and self.refund._complete(),
         }
+        self.ext = None             # set by app.ext.sources.attach_ext_sources; the benchmark's worlds never have it
         self.tools = self._build_tools()
 
     # ---- tool surface (the ONLY things an agent may call) ----
@@ -167,4 +168,5 @@ class World:
             "supplier": self.supplier.read(),
             "refund": self.refund.read() if self.refund else None,
             "notifications": self.notifications.read(),
+            **({"ext": self.ext.read()} if self.ext is not None else {}),
         }

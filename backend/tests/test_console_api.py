@@ -12,7 +12,7 @@ def seed():
 
 def test_seed_portfolio_builds_one_case_per_family_and_handles_messages():
     rows = seed()
-    assert len(rows) == 12 and len(SESSIONS) == 12
+    assert len(rows) == 14 and len(SESSIONS) == 14
     by = {r["family"]: r for r in rows}
     assert by["missing_evidence_flagship"]["waiting_on"] == "analyst" and by["missing_evidence_flagship"]["at_risk"]
     assert by["status_query"]["status"] == "auto_resolved"
@@ -23,7 +23,7 @@ def test_seed_portfolio_builds_one_case_per_family_and_handles_messages():
 def test_kpis_are_live_and_unsafe_is_zero():
     seed()
     k = c.get("/api/console/kpis").json()
-    assert k["total"] == 12 and k["awaiting_analyst"] >= 1 and k["unsafe_actions"] == 0
+    assert k["total"] == 14 and k["awaiting_analyst"] >= 1 and k["unsafe_actions"] == 0
     assert k["auto_resolved"] >= 4 and k["autonomous_rate"]["n"] >= k["autonomous_rate"]["k"]
 
 
