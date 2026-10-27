@@ -588,10 +588,11 @@ def purge(user: User = Depends(require("data.delete"))) -> dict[str, Any]:
 
 
 def purge_expired() -> int:
-    """Retention: audit files older than RIPPLE_RETENTION_DAYS are deleted (security audit and kill-switch state are kept)."""
+    """Retention: case audit files, and security logs that were set aside as unreadable, older than RIPPLE_RETENTION_DAYS are deleted.
+    The live security audit and kill-switch state are kept."""
     cutoff = time.time() - retention_days() * 86400
     n = 0
-    for p in data_dir().glob("audit_*.jsonl"):
+    for p in [*data_dir().glob("audit_*.jsonl"), *data_dir().glob("security_audit.jsonl.unreadable-*")]:
         try:
             if p.stat().st_mtime < cutoff:
                 p.unlink()

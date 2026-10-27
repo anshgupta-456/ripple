@@ -366,3 +366,24 @@ def test_case_logs_still_start_empty_and_the_security_log_uses_resume(tmp_path):
     import inspect
     from app.security import audit_security
     assert "resume=True" in inspect.getsource(audit_security.get_security_log)
+
+
+def test_retention_purge_also_expires_set_aside_security_logs_but_keeps_the_live_one(monkeypatch):
+    import os
+    from app.security.settings import data_dir
+    monkeypatch.setenv("RIPPLE_RETENTION_DAYS", "1")
+    d = data_dir()
+    old, fresh, live = d / "security_audit.jsonl.unreadable-OLD", d / "security_audit.jsonl.unreadable-FRESH", d / "security_audit.jsonl"
+    live_existed = live.exists()
+    for f in (old, fresh, live):
+        f.write_text("x")
+    long_ago = time.time() - 3 * 86400
+    os.utime(old, (long_ago, long_ago))
+    os.utime(live, (long_ago, long_ago))
+    try:
+        main.purge_expired()
+        assert not old.exists() and fresh.exists() and live.exists()
+    finally:
+        fresh.unlink(missing_ok=True)
+        if not live_existed:
+            live.unlink(missing_ok=True)
