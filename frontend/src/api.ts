@@ -1,3 +1,5 @@
+import type { OidcConfig } from "./oidc";
+
 // Hand-written client. Types mirror backend responses (also see src/api/schema.d.ts from `npm run gen:types`).
 export interface RankedAction {
   id: string; label: string; steps: string[]; tier: number; permitted: boolean; feasible: boolean;
@@ -56,7 +58,7 @@ export interface PendingApproval {
   bundle: { docs: string[]; dispute_id: string; missing: string[]; summary: string[]; provenance_note: string } | null;
 }
 export interface Me { sub: string; name: string; roles: string[]; tenant: string; expires_at: number; perms: string[]; kill_switch: { global: boolean; users: string[] } }
-export interface PublicCfg { banner: string; auth: { env: string; dev_login: boolean; oidc_configured: boolean } }
+export interface PublicCfg { banner: string; auth: { env: string; dev_login: boolean; oidc_configured: boolean; oidc_login: boolean } }
 export interface ScenarioInfo { family: string; split: string; description: string }
 export interface SessionState {
   session_id: string; banner: string;
@@ -127,6 +129,8 @@ const q = (path: string, sid?: string) => (sid ? `${path}${path.includes("?") ? 
 export const api = {
   health: () => j<{ ok: boolean }>("/api/health"),
   publicConfig: () => j<PublicCfg>("/api/config/public"),
+  oidcConfig: () => j<OidcConfig>("/api/auth/oidc-config"),
+  hasToken,
   assumptions: () => j<PublicConfig>("/api/config/assumptions"),
   devLogin: (persona: string) => j<{ token: string; expires_at: number; user: { sub: string; name: string; roles: string[] } }>("/api/auth/dev-login", { persona }),
   personas: () => j<{ id: string; name: string; roles: string[] }[]>("/api/auth/personas"),
