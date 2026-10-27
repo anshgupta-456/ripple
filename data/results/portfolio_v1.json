@@ -1,0 +1,103 @@
+{
+ "illustrative": true,
+ "n": 200,
+ "seed": 20261027,
+ "planted_distribution": {
+  "missing_evidence_flagship": 0.34,
+  "correlated_kyc_decoy": 0.16,
+  "supplier_promise_unsaveable": 0.14,
+  "deadline_already_passed": 0.1,
+  "weak_causal_edge": 0.1,
+  "conflicting_source_states": 0.06,
+  "timeout_after_write": 0.06,
+  "state_unchanged": 0.04
+ },
+ "ranked": [
+  {
+   "root_cause": "Chargeback evidence not submitted",
+   "upstream_fix": "Compile and submit dispute evidence early",
+   "merchants": 165,
+   "at_risk": 165,
+   "cascades_prevented": 71.4,
+   "effort": 3.0,
+   "prevented_per_effort": 23.79,
+   "amount_protected": 5491720
+  },
+  {
+   "root_cause": "No evidence-backed cause (escalate)",
+   "upstream_fix": "Warn the supplier early",
+   "merchants": 24,
+   "at_risk": 24,
+   "cascades_prevented": 0.0,
+   "effort": 2.0,
+   "prevented_per_effort": 0.0,
+   "amount_protected": 0
+  },
+  {
+   "root_cause": "Source records conflict",
+   "upstream_fix": "Warn the supplier early",
+   "merchants": 11,
+   "at_risk": 11,
+   "cascades_prevented": 0.0,
+   "effort": 2.0,
+   "prevented_per_effort": 0.0,
+   "amount_protected": 0
+  }
+ ],
+ "by_family": {
+  "missing_evidence_flagship": {
+   "merchants": 67,
+   "at_risk": 67,
+   "escalate": 0,
+   "traced_cause": "Chargeback evidence not submitted"
+  },
+  "weak_causal_edge": {
+   "merchants": 24,
+   "at_risk": 24,
+   "escalate": 24,
+   "traced_cause": "No evidence-backed cause (escalate)"
+  },
+  "correlated_kyc_decoy": {
+   "merchants": 33,
+   "at_risk": 33,
+   "escalate": 0,
+   "traced_cause": "Chargeback evidence not submitted"
+  },
+  "timeout_after_write": {
+   "merchants": 12,
+   "at_risk": 12,
+   "escalate": 0,
+   "traced_cause": "Chargeback evidence not submitted"
+  },
+  "deadline_already_passed": {
+   "merchants": 22,
+   "at_risk": 22,
+   "escalate": 22,
+   "traced_cause": "Chargeback evidence not submitted"
+  },
+  "conflicting_source_states": {
+   "merchants": 11,
+   "at_risk": 11,
+   "escalate": 11,
+   "traced_cause": "Source records conflict"
+  },
+  "supplier_promise_unsaveable": {
+   "merchants": 26,
+   "at_risk": 26,
+   "escalate": 26,
+   "traced_cause": "Chargeback evidence not submitted"
+  },
+  "state_unchanged": {
+   "merchants": 5,
+   "at_risk": 5,
+   "escalate": 0,
+   "traced_cause": "Chargeback evidence not submitted"
+  }
+ },
+ "totals": {
+  "at_risk": 200,
+  "escalate": 83,
+  "cascades_prevented": 71.4
+ },
+ "note": "200 synthetic merchants with a planted cause distribution. Illustrative only: not a finding about real merchants."
+}

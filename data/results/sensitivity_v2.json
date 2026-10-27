@@ -1,0 +1,598 @@
+{
+ "synthetic_data": true,
+ "note": "Modeled assumptions varied over stated ranges; synthetic results, not predictions about real merchants.",
+ "cost": {
+  "grid": {
+   "cost_per_human_minute_inr": [
+    3.0,
+    6.0,
+    12.0,
+    24.0
+   ],
+   "manual_minutes_per_case": [
+    7,
+    14,
+    28
+   ],
+   "prebuilt_memo_minutes_saved": [
+    0,
+    9,
+    18
+   ]
+  },
+  "n": 36,
+  "E_cheaper_than_C_in": 20,
+  "rows": [
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 15.8,
+     "B": 46.01,
+     "C": 12.8,
+     "D": 17.73,
+     "E": 43.23
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 15.8,
+     "B": 46.01,
+     "C": 12.8,
+     "D": 15.8,
+     "E": 27.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 15.8,
+     "B": 46.01,
+     "C": 12.8,
+     "D": 13.87,
+     "E": 12.37
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 30.8,
+     "B": 53.51,
+     "C": 24.8,
+     "D": 25.23,
+     "E": 43.23
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 30.8,
+     "B": 53.51,
+     "C": 24.8,
+     "D": 23.3,
+     "E": 27.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 30.8,
+     "B": 53.51,
+     "C": 24.8,
+     "D": 21.37,
+     "E": 12.37
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 60.8,
+     "B": 68.51,
+     "C": 48.8,
+     "D": 40.23,
+     "E": 43.23
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 60.8,
+     "B": 68.51,
+     "C": 48.8,
+     "D": 38.3,
+     "E": 27.8
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 3.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 60.8,
+     "B": 68.51,
+     "C": 48.8,
+     "D": 36.37,
+     "E": 12.37
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 30.8,
+     "B": 91.23,
+     "C": 24.8,
+     "D": 34.66,
+     "E": 85.66
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 30.8,
+     "B": 91.23,
+     "C": 24.8,
+     "D": 30.8,
+     "E": 54.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 30.8,
+     "B": 91.23,
+     "C": 24.8,
+     "D": 26.94,
+     "E": 23.94
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 60.8,
+     "B": 106.23,
+     "C": 48.8,
+     "D": 49.66,
+     "E": 85.66
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 60.8,
+     "B": 106.23,
+     "C": 48.8,
+     "D": 45.8,
+     "E": 54.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 60.8,
+     "B": 106.23,
+     "C": 48.8,
+     "D": 41.94,
+     "E": 23.94
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 120.8,
+     "B": 136.23,
+     "C": 96.8,
+     "D": 79.66,
+     "E": 85.66
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 120.8,
+     "B": 136.23,
+     "C": 96.8,
+     "D": 75.8,
+     "E": 54.8
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 6.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 120.8,
+     "B": 136.23,
+     "C": 96.8,
+     "D": 71.94,
+     "E": 23.94
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 60.8,
+     "B": 181.66,
+     "C": 48.8,
+     "D": 68.51,
+     "E": 170.51
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 60.8,
+     "B": 181.66,
+     "C": 48.8,
+     "D": 60.8,
+     "E": 108.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 60.8,
+     "B": 181.66,
+     "C": 48.8,
+     "D": 53.09,
+     "E": 47.09
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 120.8,
+     "B": 211.66,
+     "C": 96.8,
+     "D": 98.51,
+     "E": 170.51
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 120.8,
+     "B": 211.66,
+     "C": 96.8,
+     "D": 90.8,
+     "E": 108.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 120.8,
+     "B": 211.66,
+     "C": 96.8,
+     "D": 83.09,
+     "E": 47.09
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 240.8,
+     "B": 271.66,
+     "C": 192.8,
+     "D": 158.51,
+     "E": 170.51
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 240.8,
+     "B": 271.66,
+     "C": 192.8,
+     "D": 150.8,
+     "E": 108.8
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 12.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 240.8,
+     "B": 271.66,
+     "C": 192.8,
+     "D": 143.09,
+     "E": 47.09
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 120.8,
+     "B": 362.51,
+     "C": 96.8,
+     "D": 136.23,
+     "E": 340.23
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 120.8,
+     "B": 362.51,
+     "C": 96.8,
+     "D": 120.8,
+     "E": 216.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 7,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 120.8,
+     "B": 362.51,
+     "C": 96.8,
+     "D": 105.37,
+     "E": 93.37
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 240.8,
+     "B": 422.51,
+     "C": 192.8,
+     "D": 196.23,
+     "E": 340.23
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 240.8,
+     "B": 422.51,
+     "C": 192.8,
+     "D": 180.8,
+     "E": 216.8
+    },
+    "E_cheaper_than_C": false
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 14,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 240.8,
+     "B": 422.51,
+     "C": 192.8,
+     "D": 165.37,
+     "E": 93.37
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 0,
+    "cost": {
+     "A": 480.8,
+     "B": 542.51,
+     "C": 384.8,
+     "D": 316.23,
+     "E": 340.23
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 9,
+    "cost": {
+     "A": 480.8,
+     "B": 542.51,
+     "C": 384.8,
+     "D": 300.8,
+     "E": 216.8
+    },
+    "E_cheaper_than_C": true
+   },
+   {
+    "cost_per_human_minute_inr": 24.0,
+    "manual_minutes_per_case": 28,
+    "prebuilt_memo_minutes_saved": 18,
+    "cost": {
+     "A": 480.8,
+     "B": 542.51,
+     "C": 384.8,
+     "D": 285.37,
+     "E": 93.37
+    },
+    "E_cheaper_than_C": true
+   }
+  ]
+ },
+ "harm": [
+  {
+   "scenario": "baseline",
+   "runs": 420,
+   "C": {
+    "verified": 0.5,
+    "unsafe": 150,
+    "false_resolved": 48,
+    "escalation_recall": 0.0,
+    "autonomous": 1.0,
+    "stability": null
+   },
+   "E": {
+    "verified": 1.0,
+    "unsafe": 0,
+    "false_resolved": 0,
+    "escalation_recall": 1.0,
+    "autonomous": 1.0,
+    "stability": 0.898
+   }
+  },
+  {
+   "scenario": "all weights x0.5",
+   "runs": 420,
+   "C": {
+    "verified": 0.5,
+    "unsafe": 150,
+    "false_resolved": 48,
+    "escalation_recall": 0.0,
+    "autonomous": 1.0,
+    "stability": null
+   },
+   "E": {
+    "verified": 1.0,
+    "unsafe": 0,
+    "false_resolved": 0,
+    "escalation_recall": 1.0,
+    "autonomous": 1.0,
+    "stability": 0.889
+   }
+  },
+  {
+   "scenario": "all weights x2",
+   "runs": 420,
+   "C": {
+    "verified": 0.5,
+    "unsafe": 150,
+    "false_resolved": 48,
+    "escalation_recall": 0.0,
+    "autonomous": 1.0,
+    "stability": null
+   },
+   "E": {
+    "verified": 1.0,
+    "unsafe": 0,
+    "false_resolved": 0,
+    "escalation_recall": 1.0,
+    "autonomous": 1.0,
+    "stability": 0.959
+   }
+  },
+  {
+   "scenario": "supplier miss x2, delay x0.5",
+   "runs": 420,
+   "C": {
+    "verified": 0.5,
+    "unsafe": 150,
+    "false_resolved": 48,
+    "escalation_recall": 0.0,
+    "autonomous": 1.0,
+    "stability": null
+   },
+   "E": {
+    "verified": 1.0,
+    "unsafe": 0,
+    "false_resolved": 0,
+    "escalation_recall": 1.0,
+    "autonomous": 1.0,
+    "stability": 0.959
+   }
+  },
+  {
+   "scenario": "supplier miss x0.5, delay x2",
+   "runs": 420,
+   "C": {
+    "verified": 0.5,
+    "unsafe": 150,
+    "false_resolved": 48,
+    "escalation_recall": 0.0,
+    "autonomous": 1.0,
+    "stability": null
+   },
+   "E": {
+    "verified": 1.0,
+    "unsafe": 0,
+    "false_resolved": 0,
+    "escalation_recall": 1.0,
+    "autonomous": 1.0,
+    "stability": 0.889
+   }
+  }
+ ]
+}
