@@ -1,0 +1,6 @@
+# Demo override: turns on RIPPLE_ENV=dev (persona login, demo controls, 15-minute tokens signed with a throwaway key).
+# Never expose this to a network. Usage: docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build
+services:
+  ripple:
+    environment:
+      RIPPLE_ENV: dev

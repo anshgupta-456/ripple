@@ -322,8 +322,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=9100)
     ap.add_argument("--access-ttl", type=int, default=600, help="access token lifetime in seconds (short values exercise silent renewal)")
+    ap.add_argument("--origin", action="append", default=[], help="extra registered SPA origin, e.g. http://localhost:8000 (repeatable)")
     a = ap.parse_args()
-    srv = IdpServer(IdpConfig(access_ttl=a.access_ttl), port=a.port).start()
+    cfg = IdpConfig(access_ttl=a.access_ttl)
+    for o in a.origin:
+        cfg.redirect_uris.append(o.rstrip("/") + "/")
+        cfg.spa_origins.append(o.rstrip("/"))
+    srv = IdpServer(cfg, port=a.port).start()
     print(f"mock IdP at {srv.issuer}  client_id={srv.cfg.client_id}  audience={srv.cfg.audience}")
     try:
         while True:

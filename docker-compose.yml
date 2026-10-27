@@ -1,0 +1,25 @@
+# Production-shaped run. With no identity provider configured the API refuses every request, which is the intended default.
+# Put your settings in .env (see docs/DEPLOY.md); never commit it. Terminate TLS in a reverse proxy in front of port 8000.
+services:
+  ripple:
+    build:
+      context: .
+      args:
+        EXTRAS: ${RIPPLE_BUILD_EXTRAS:-}        # "aws" to include boto3 for the Secrets Manager adapter
+    image: ripple:local
+    ports:
+      - "127.0.0.1:8000:8000"                   # loopback only; publish through your proxy, not directly
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RIPPLE_ENV: ${RIPPLE_ENV:-prod}
+    volumes:
+      - ripple-data:/var/ripple
+    cap_drop: [ALL]                             # a read-only root filesystem is a further hardening step: /app/data needs a writable mount first
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  ripple-data:

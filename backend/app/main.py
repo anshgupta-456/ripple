@@ -34,6 +34,7 @@ from app.security.redact import redact_obj
 from app.security.backends import configure_from_env
 from app.security.secret_store import install_log_scrubber
 from app.security.settings import data_dir, is_dev, retention_days
+from app.web import API_CSP, mount_spa
 
 app = FastAPI(title="RIPPLE", version="0.7.0", docs_url=None if not is_dev() else "/docs", redoc_url=None)
 # Same-origin in production; the Vite dev server origin is allowed only in dev. Credentials are bearer tokens, not cookies.
@@ -50,6 +51,9 @@ async def security_headers(request: Request, call_next):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Cache-Control", "no-store")            # case data must not sit in shared caches
+    resp.headers.setdefault("Content-Security-Policy", API_CSP)     # the page route sets its own, stricter-for-scripts policy
+    if not is_dev():                                                # browsers ignore HSTS over plain http, so this is safe behind a TLS proxy
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
 
@@ -657,3 +661,6 @@ async def unhandled(request: Request, exc: Exception):
     import logging
     logging.getLogger("ripple").exception("unhandled error on %s", request.url.path)
     return JSONResponse({"detail": "internal error"}, status_code=500)
+
+
+mount_spa(app)      # last: serves the built single-page app on the same origin when frontend/dist exists (RIPPLE_STATIC_DIR overrides)
