@@ -1,0 +1,51 @@
+# RIPPLE frozen configuration. SYNTHETIC / MODELED values only.
+# Every assumption used by the engine, simulator, benchmark and scoreboard lives here.
+# Tag the repo `frozen-v1` before the scored benchmark run; do not edit afterwards.
+
+version: "0.1.0-draft"
+synthetic_data_banner: "SYNTHETIC DATA. Modeled assumptions, no real merchants or money."
+
+simulation:
+  timezone_offset_minutes: 330        # IST
+  default_seed: 5120
+  monte_carlo_samples: 2000
+
+benchmark:
+  # Families never used for tuning thresholds, prompts or weights.
+  held_out_families:
+    - no_action
+    - supplier_promise_unsaveable
+    - conflicting_source_states
+  target_templates: 24
+  runs_per_template: 5
+
+tiers:
+  1: "agent_alone"
+  2: "merchant_consent"
+  3: "human_approval"
+  4: "never"
+
+policy:
+  approval_expiry_minutes: 60
+  min_benefit_threshold: 0.05         # best score at/below this => DO_NOTHING
+  decision_stability_min: 0.8
+  extraction_confidence_min: 0.7
+  max_failed_action_retries: 1
+
+cost_model:                           # MODELED, illustrative only
+  manual_minutes_per_case: 14
+  manual_minutes_per_escalated_case: 22
+  prebuilt_memo_minutes_saved: 9
+  cost_per_human_minute_inr: 6.0
+  agent_cost_per_case_inr: 0.8
+
+harm_weights:                         # illustrative units of "harm" for a missed obligation
+  missed_supplier_payment: 1.0
+  missed_refund_sla: 0.6
+  kyc_lapse: 0.5
+  repeat_contact: 0.1
+
+mock_world:
+  start_local: "2026-11-02T10:00:00"  # Monday 10:00 IST
+  default_review_hours: 20
+  default_release_delay_hours: 6

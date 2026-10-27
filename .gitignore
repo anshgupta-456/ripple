@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+node_modules/
+frontend/dist/
+data/ground_truth/*.yaml
+data/*.sqlite
+data/*.jsonl
