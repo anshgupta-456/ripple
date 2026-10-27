@@ -142,6 +142,8 @@ def browser_config(s: OidcSettings) -> dict[str, Any]:
 
 
 def _dig(claims: dict[str, Any], path: str) -> Any:
+    if path in claims:                      # exact key first: namespaced claims such as "https://example.com/roles" contain dots
+        return claims[path]
     cur: Any = claims
     for part in path.split("."):
         if not isinstance(cur, dict) or part not in cur:

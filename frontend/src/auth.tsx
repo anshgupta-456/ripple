@@ -25,6 +25,13 @@ const remembered = () => { try { return localStorage.getItem(KEY); } catch { ret
 // Guard against redirect loops: at most one silent renewal attempt per 30 seconds.
 const SILENT_KEY = "ripple.oidc.silent_at";
 const SILENT_MIN_GAP_MS = 30_000;
+// A non-secret per-tab marker: "this tab signed in via SSO". It lets a page reload re-authorize silently against the IdP session
+// (the token itself lives only in memory and is gone after a reload).
+const SSO_FLAG = "ripple.oidc.sso";
+const ssoFlag = () => { try { return sessionStorage.getItem(SSO_FLAG) === "1"; } catch { return false; } };
+const setSsoFlag = (on: boolean) => { try { on ? sessionStorage.setItem(SSO_FLAG, "1") : sessionStorage.removeItem(SSO_FLAG); } catch { /* ignore */ } };
+const silentAllowed = () => { try { return Date.now() - Number(sessionStorage.getItem(SILENT_KEY) || 0) > SILENT_MIN_GAP_MS; } catch { return false; } };
+const markSilent = () => { try { sessionStorage.setItem(SILENT_KEY, String(Date.now())); } catch { /* ignore */ } };
 
 // React StrictMode runs effects twice in development; the one-time authorization code must be consumed exactly once.
 let callbackOnce: Promise<{ oidc: OidcConfig | null; result: CallbackResult; error: string }> | null = null;
@@ -38,7 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const idToken = useRef<string | undefined>(undefined);   // memory only; used as a logout hint
 
-  const refresh = useCallback(() => { api.me().then(setMe).catch(() => setMe(null)); }, []);
+  // Only a real 401 ends the session (and that also raises the "ripple-auth" renewal event). A network blip or an API restart must not sign anyone out.
+  const refresh = useCallback(() => { api.me().then(setMe).catch((e) => { if (/\b401\b/.test(String(e))) setMe(null); }); }, []);
 
   const login = useCallback(async (persona: string) => {
     const r = await api.devLogin(persona);
@@ -58,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     const url = source === "oidc" && oidc ? endSessionUrl(oidc, window.location.origin, idToken.current) : null;
     setToken(null); setMe(null); setSource(null); idToken.current = undefined;
+    setSsoFlag(false);
     try { localStorage.removeItem(KEY); sessionStorage.removeItem(SILENT_KEY); } catch { /* ignore */ }
     if (url) window.location.assign(url);                    // also ends the IdP session so "Sign out" really signs out
   }, [source, oidc]);
@@ -84,14 +93,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             try {
               setMe(await api.me());
               setSource("oidc");
+              setSsoFlag(true);
+              try { sessionStorage.removeItem(SILENT_KEY); } catch { /* ignore */ }   // the API accepted the new token: not a loop, re-arm the guard
               if (result.returnHash) window.location.hash = result.returnHash;
             } catch (e) {
               setToken(null);
+              setSsoFlag(false);
               setAuthError(`The API refused your sign-in: ${e instanceof Error ? e.message : String(e)}`);
             }
           } else if (result.status === "error") {
+            setSsoFlag(false);                                 // never retry silently after a failure: no loops
             setAuthError(result.message);
             if (result.returnHash) window.location.hash = result.returnHash;
+          } else if (oc && ssoFlag() && silentAllowed()) {     // reloaded tab: renew silently against the IdP session
+            markSilent();
+            try { await startLogin(oc, browserEnv(), { silent: true, returnHash: window.location.hash }); return; } catch { /* show sign-in */ }
           }
         }
         const p = remembered();
@@ -108,11 +124,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onAuth = async () => {
       if (source === "dev") { const p = remembered(); if (p) { try { await login(p); return; } catch { /* fall through */ } } }
       if (source === "oidc" && oidc) {
-        let last = 0;
-        try { last = Number(sessionStorage.getItem(SILENT_KEY) || 0); } catch { /* ignore */ }
         setToken(null); setMe(null);
-        if (Date.now() - last > SILENT_MIN_GAP_MS) {      // silent renewal against the IdP session (prompt=none)
-          try { sessionStorage.setItem(SILENT_KEY, String(Date.now())); } catch { /* ignore */ }
+        if (silentAllowed()) {                             // silent renewal against the IdP session (prompt=none)
+          markSilent();
           try { await startLogin(oidc, browserEnv(), { silent: true, returnHash: window.location.hash }); return; } catch { /* show sign-in */ }
         }
         setAuthError("Your session expired. Please sign in again.");

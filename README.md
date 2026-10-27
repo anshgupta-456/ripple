@@ -13,7 +13,8 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 - Phase 5 done: 12 scenario families, baselines A-D plus full RIPPLE (E), seeded runner, metrics with Wilson CIs, independent tool-layer policy auditor, config frozen at tag `frozen-v1`, scored results in `data/results/bench_frozen-v1.json`, scoreboard card in the UI. Protocol and **disclosures**: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 - Phase 6 done: full dashboard. **Ops Console** (live queue, KPIs, simulate a merchant message), **Case** page (chat, source context, trace graph with the decoy dashed, ranked actions incl. do-nothing, Why? drawer, state ladder, audit log), **Approvals** (one-tap card, bundle edit changes the action hash), **Scoreboard** (metrics with CIs, per-family wins/losses, assumptions, disclosures), **Lab** (System C vs RIPPLE on the same world, chaos panel, judge-typed attacks, approval replay). Click-by-click script: [docs/DEMO.md](docs/DEMO.md).
 - Security pass done: authentication on every route (OIDC validation + dev personas), RBAC from the token only, tenant isolation, PII redaction, LLM data gate/spend cap/host allowlist, HMAC-chained encrypted audit log, kill switch, rate limits, retention and deletion. Threat model, data flows and an honest control matrix with gaps: [docs/SECURITY.md](docs/SECURITY.md).
-- Next: polish and presentation (deck, rehearsal, backup video). Optional: real IdP integration, secrets-manager adapter, live-LLM System C.
+- Real sign-in and secrets: browser **OIDC authorization code + PKCE** sign-in ([docs/OIDC.md](docs/OIDC.md)) and **Vault / AWS Secrets Manager** adapters ([docs/SECRETS.md](docs/SECRETS.md)), tested against local mocks (mock IdP, mock Vault, moto) and in a real browser. Not yet tested against a production IdP, Vault or AWS account.
+- Next: polish and presentation (deck, rehearsal, backup video). Optional: run the flow against a real IdP, CSP on the SPA host, live-LLM System C.
 
 ## Run
 ```

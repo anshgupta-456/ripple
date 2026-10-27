@@ -147,11 +147,14 @@ def make_tls_files(dirpath: Path) -> tuple[Path, Path, Path]:
 
 
 class VaultServer:
-    def __init__(self, tls: tuple[Path, Path] | None = None):
+    def __init__(self, tls: tuple[Path, Path] | None = None, port: int | None = None):
         self.state = VaultState()
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            self.port = s.getsockname()[1]
+        if port:
+            self.port = port
+        else:
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                self.port = s.getsockname()[1]
         self.scheme = "https" if tls else "http"
         kw: dict[str, Any] = {"ssl_certfile": str(tls[0]), "ssl_keyfile": str(tls[1])} if tls else {}
         self._server = uvicorn.Server(uvicorn.Config(create_app(self.state), host="127.0.0.1", port=self.port, log_level="warning", **kw))
@@ -172,3 +175,22 @@ class VaultServer:
     def stop(self) -> None:
         self._server.should_exit = True
         self._thread.join(timeout=5)
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Mock Vault for demos: AppRole role-1 / secret-id-1, KV v2 mount 'secret', prefix 'ripple'.")
+    ap.add_argument("--port", type=int, default=9200)
+    ap.add_argument("--secret", action="append", default=[], metavar="NAME=value", help="seed a secret (repeatable)")
+    a = ap.parse_args()
+    srv = VaultServer(port=a.port)
+    for item in a.secret:
+        name, _, value = item.partition("=")
+        srv.state.put(name, value)
+    srv.start()
+    print(f"mock Vault at {srv.addr}  approle role_id=role-1 secret_id=secret-id-1  seeded: {[s.partition('=')[0] for s in a.secret]}")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        srv.stop()

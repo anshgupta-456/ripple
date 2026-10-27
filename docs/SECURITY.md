@@ -65,7 +65,7 @@ Status: **Enforced** = code plus tests. **Partial** = real but limited. **Gap** 
 ### Identity and access
 | Requirement | Status | How / what is missing |
 |---|---|---|
-| SSO/OIDC, no custom password store | **Partial** | OIDC/OAuth2 JWT validation (JWKS, issuer, audience, expiry) is implemented and tested with locally generated keys and a fake JWKS. **Not tested against a real IdP.** SAML is expected to be bridged by the IdP. The SPA has **no browser sign-in flow** (auth code + PKCE). There is no password store; dev personas are tokens, not passwords. |
+| SSO/OIDC, no custom password store | **Partial** | Browser sign-in is **authorization code + PKCE (S256)** with state, nonce, single-use pending record, code stripped from the URL, in-memory token, silent renewal with a loop guard and IdP logout (`frontend/src/oidc.ts`, [docs/OIDC.md](OIDC.md)). The API validates RS256/ES256 tokens over real HTTP discovery and JWKS (https only, issuer match, host allowlist, key-rotation cooldown), maps roles/groups/tenant claims, and audits each OIDC login. Tested end to end against a strict **mock** IdP (36 backend tests, 28 browser-client tests, real browser run). **Not yet tested against a production IdP**; Amazon Cognito access tokens (no `aud`) are not supported. SAML is expected to be bridged by the IdP. There is no password store; dev personas are tokens, not passwords. |
 | Agent acts with the user's permissions, not a shared super-account | **Partial** | Every request is authorised as the calling user's roles and the actor is in every audit entry. Risk actions need that user's (analyst) approval. **Gap:** against real downstream systems the executor would use a service identity; production needs OAuth2 token exchange (RFC 8693, on-behalf-of) so downstream calls carry the user's scope. |
 | RBAC, least privilege | **Enforced** | `PERMS` table in `app/security/auth.py`; viewer < analyst/admin; merchant limited to its own case; separation of duties. |
 | Short-lived tokens, no long-lived keys in the agent's context | **Enforced** | tokens over 1 h are refused; dev tokens last 15 min; browser keeps the token in memory only; the agent never holds a key. |
@@ -73,7 +73,7 @@ Status: **Enforced** = code plus tests. **Partial** = real but limited. **Gap** 
 ### Credentials and secrets
 | Requirement | Status | How / what is missing |
 |---|---|---|
-| No hardcoded secrets; secrets manager; never in logs/prompts | **Partial** | `app/security/secret_store.py`: env, `NAME_FILE`, or registered backend; log scrubber; a test scans the code for secret-like literals. **Vault / AWS Secrets Manager / KMS adapters are an extension point (`register_backend`), not implemented.** |
+| No hardcoded secrets; secrets manager; never in logs/prompts | **Partial** | `app/security/secret_store.py` plus `backends.py`: **HashiCorp Vault KV v2** (AppRole, Kubernetes auth, Agent token file; short-lived tokens renewed before expiry; no redirects followed; verified TLS) and **AWS Secrets Manager** (credentials only from the provider chain). A configured manager is authoritative, values refresh on a TTL (rotation without restart), a broken backend stops startup, and a log-record factory scrubs every secret and backend credential from every logger. A test scans the code for secret-like literals. Tested against a mock Vault (real HTTP/TLS) and moto (real boto3); **not yet against a real Vault or AWS account**; KMS-wrapped envelope encryption is not implemented. See [docs/SECRETS.md](SECRETS.md). |
 | Third-party OAuth tokens encrypted per user, refreshed server-side | **N/A** | the app stores no third-party OAuth tokens. |
 | Encrypt in transit | **Gap (deployment)** | TLS is terminated at your proxy/ingress; the app does not terminate TLS or set HSTS. |
 | Encrypt at rest | **Partial** | audit files are Fernet-encrypted. Case state is in memory only (no database). The LLM cache file holds model outputs (inputs are hashed from masked text) in plaintext: low sensitivity, but not encrypted. |
@@ -115,7 +115,8 @@ This build touches data that would be regulated in a real deployment. Get a comp
 - **Payment and financial data** (settlements, disputes, bank-detail text): RBI rules on payment-system data storage and localisation; PCI DSS if card numbers can ever reach the system (the model gate and redaction reduce, but do not remove, the chance that they are typed into chat and held in memory).
 - **Third-party processing**: sending even masked merchant text to a model provider is a processor relationship; needs a DPA, region and retention terms.
 - **SOC 2 scope**: access control (CC6), change and monitoring (CC7), audit-log retention, and the kill switch as an incident control.
-- Not covered by this prototype: penetration test, dependency/SBOM scanning, secrets rotation, backup and DR, incident-response runbook.
+- Not covered by this prototype: penetration test, dependency/SBOM scanning, backup and DR, incident-response runbook.
+- Known hardening still open for the browser app: a **Content-Security-Policy** on the host that serves the SPA (it limits what an XSS could do with the in-memory token; `connect-src` must allow your IdP's token endpoint), HSTS at the proxy, and a real-IdP integration test.
 
 ## 7. Run it
 ```

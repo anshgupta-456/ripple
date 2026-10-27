@@ -195,6 +195,21 @@ def test_prompt_none_silent_renewal_needs_an_idp_session(make_idp):
         assert "code" in code_from(r)
 
 
+def test_logout_ends_the_idp_session_and_only_redirects_to_registered_addresses(make_idp):
+    srv = make_idp()
+    with httpx.Client(verify=False) as c:                                           # cookie jar = the browser
+        r, _ = authorize(srv, c, user="priya")
+        assert "code" in code_from(r)                                               # signed in at the IdP
+        r, _ = authorize(srv, c, user="nobody", prompt="none")
+        assert "code" in code_from(r)                                               # the session is alive: silent renewal works
+        out = c.get(srv.issuer + "/logout", params={"post_logout_redirect_uri": REDIRECT, "id_token_hint": "x"}, follow_redirects=False)
+        assert out.status_code == 302 and out.headers["location"] == REDIRECT
+        r, _ = authorize(srv, c, user="nobody", prompt="none")
+        assert code_from_error(r)["error"] == "login_required"                      # logout really ended the IdP session
+        evil = c.get(srv.issuer + "/logout", params={"post_logout_redirect_uri": "http://evil.example/"}, follow_redirects=False)
+        assert evil.status_code == 200 and "location" not in evil.headers           # no open redirect
+
+
 def test_cors_allows_only_registered_spa_origins(make_idp):
     srv = make_idp()
     ok = httpx.options(srv.issuer + "/token", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"}, verify=False)
@@ -295,6 +310,14 @@ def test_unmapped_group_names_grant_nothing(make_idp):
 def test_nested_roles_claim_like_keycloak(make_idp):
     srv = make_idp(env={"RIPPLE_OIDC_ROLES_CLAIM": "realm_access.roles"}, roles_claim="realm_access.roles")
     assert me(login(srv, "meena")).json()["roles"] == ["viewer"]
+
+
+def test_namespaced_claim_names_with_dots_like_auth0(make_idp):
+    ns = "https://ripple.example.com/roles"
+    srv = make_idp(env={"RIPPLE_OIDC_ROLES_CLAIM": ns, "RIPPLE_OIDC_TENANT_CLAIM": "https://ripple.example.com/tenant"},
+                   roles_claim=ns, literal_claim_names=True, tenant_claim="https://ripple.example.com/tenant", tenant="acme")
+    r = me(login(srv, "priya")).json()
+    assert r["roles"] == ["analyst"] and r["tenant"] == "acme"
 
 
 def test_custom_tenant_claim(make_idp):

@@ -71,6 +71,7 @@ class IdpConfig:
     authorization_host_override: str | None = None
     advertise_pkce: list[str] | None = field(default_factory=lambda: ["S256"])
     omit_roles: bool = False
+    literal_claim_names: bool = False                 # keep dots in claim names (Auth0-style namespaced claims)
 
 
 _POOL: list[Any] = []
@@ -125,11 +126,14 @@ class IdpState:
         access: dict[str, Any] = {"iss": c.iss_claim_override or self.issuer, "sub": f"idp|{user}", "aud": c.audience_override or c.audience,
                                   "iat": now, "exp": now + c.access_ttl, "jti": secrets.token_hex(8), "azp": client_id, "name": u["name"]}
         if not c.omit_roles:
-            cur: Any = access
-            parts = c.roles_claim.split(".")
-            for part in parts[:-1]:
-                cur = cur.setdefault(part, {})
-            cur[parts[-1]] = roles
+            if c.literal_claim_names:
+                access[c.roles_claim] = roles
+            else:
+                cur: Any = access
+                parts = c.roles_claim.split(".")
+                for part in parts[:-1]:
+                    cur = cur.setdefault(part, {})
+                cur[parts[-1]] = roles
         access[c.tenant_claim] = c.tenant
         if "merchant_id" in u:
             access["merchant_id"] = u["merchant_id"]
@@ -317,8 +321,9 @@ class IdpServer:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=9100)
+    ap.add_argument("--access-ttl", type=int, default=600, help="access token lifetime in seconds (short values exercise silent renewal)")
     a = ap.parse_args()
-    srv = IdpServer(port=a.port).start()
+    srv = IdpServer(IdpConfig(access_ttl=a.access_ttl), port=a.port).start()
     print(f"mock IdP at {srv.issuer}  client_id={srv.cfg.client_id}  audience={srv.cfg.audience}")
     try:
         while True:
