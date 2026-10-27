@@ -60,7 +60,8 @@ def decide(tl: Timeline, tools: set[str], seed: int, prev_graph: GraphSnapshot |
     ob_id = f"obligation:{tl.val('supplier.supplier_id')}" if tl.val("supplier.supplier_id") else None
     trace = reverse_trace(built.g, ob_id)
     due_h = _hours(tl.val("supplier.due_at"), tl.now) if ob_id else None
-    present = ob_id is not None
+    # an obligation matters only if the merchant has tied it to this settlement (OBLIGATION edge exists)
+    present = ob_id is not None and any(True for _ in built.g.in_edges(ob_id))
     n = p["samples"]
 
     def run(pp: dict[str, Any], s: int, nn: int):

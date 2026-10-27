@@ -24,7 +24,7 @@ actions:
       text: {type: text, max_len: 600}
   send_merchant_message:
     tier: 1
-    max_per_case: 10
+    max_per_case: 40
     params:
       text: {type: text, max_len: 800}
   send_kyc_reminder:

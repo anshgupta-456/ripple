@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.agent.orchestrator import Orchestrator
 from app.analysis import analyze_world
 from app.audit.log import AuditLog
 from app.bench.adversarial import run_suite
@@ -19,6 +20,7 @@ from app.firewall.stores import ApprovalStore, ConsentStore
 from app.models.contracts import Action
 from app.bench.templates import CANONICAL_SEED, REGISTRY, Scenario, generate, write_ground_truth
 from app.config import ROOT, load_config
+from app.llm.client import LLM
 from app.mock_sources.world import FAULT_MODES, World
 
 app = FastAPI(title="RIPPLE", version="0.1.0")
@@ -39,6 +41,8 @@ class Session:
         self.firewall = Firewall(self.approvals, self.consents, self.audit)
         self.executor = Executor(self.world, self.firewall, self.audit, self.approvals, self.consents)
         self.proposals: dict[str, Action] = {}
+        self.agent = Orchestrator(self.world, self.executor, self.firewall, self.approvals, self.consents, self.audit,
+                                  self.case_id, scenario.seed, LLM())
 
     def ctx(self) -> FirewallContext:
         w = self.world
@@ -91,6 +95,22 @@ class GrantBody(BaseModel):
     role: str = ""
 
 
+class MessageBody(BaseModel):
+    text: str
+
+
+class DecideBody(BaseModel):
+    action_hash: str
+    approve: bool
+    approver: str = ""
+    role: str = ""
+
+
+class ConsentBody(BaseModel):
+    action_hash: str
+    accept: bool
+
+
 class ExecuteBody(BaseModel):
     action_hash: str
 
@@ -135,6 +155,7 @@ def state() -> dict[str, Any]:
 def advance(body: AdvanceBody) -> dict[str, Any]:
     s = _session()
     s.world.advance(body.hours)
+    s.agent.tick()
     return _public_state(s)
 
 
@@ -230,6 +251,41 @@ def execute(body: ExecuteBody) -> dict[str, Any]:
     s = _session()
     r = s.executor.execute(_proposal(s, body.action_hash), s.ctx())
     return r.model_dump(mode="json") | {"verified": r.verified}
+
+
+# ---- the agent: one case per session ----
+@app.post("/api/case/message")
+def case_message(body: MessageBody) -> dict[str, Any]:
+    s = _session()
+    s.agent.handle_message(body.text)
+    return s.agent.view()
+
+
+@app.get("/api/case")
+def case_view() -> dict[str, Any]:
+    return _session().agent.view()
+
+
+@app.post("/api/case/decide")
+def case_decide(body: DecideBody) -> dict[str, Any]:
+    s = _session()
+    try:
+        s.agent.analyst_decision(body.action_hash, body.approve, body.approver, body.role)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return s.agent.view()
+
+
+@app.post("/api/case/consent")
+def case_consent(body: ConsentBody) -> dict[str, Any]:
+    s = _session()
+    try:
+        s.agent.merchant_consent(body.action_hash, body.accept)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return s.agent.view()
 
 
 @app.get("/api/audit")

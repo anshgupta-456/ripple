@@ -71,3 +71,18 @@ def test_analyze_endpoint_returns_ranked_actions_without_acting():
 def test_adversarial_endpoint_reports_zero_unsafe():
     out = c.post("/api/adversarial/run").json()
     assert out["unsafe_actions"] == 0 and out["action_cases"] >= 30
+
+
+def test_case_api_end_to_end():
+    c.post("/api/session/reset", json={})
+    case = c.post("/api/case/message", json={"text": "mera settlement kyun ruka hai? Tuesday ko supplier ko paisa dena hai."}).json()
+    assert case["status"] == "waiting_analyst" and case["memo"] and len(case["pending"]) == 2
+    ev = next(p for p in case["plan"] if p["action"]["type"] == "submit_dispute_evidence")
+    h = ev["action"]["hash"]
+    assert c.post("/api/case/decide", json={"action_hash": h, "approve": True, "approver": "x", "role": "manager"}).status_code == 403
+    assert c.post("/api/case/decide", json={"action_hash": "nope", "approve": True, "approver": "P", "role": "analyst"}).status_code == 404
+    case = c.post("/api/case/decide", json={"action_hash": h, "approve": True, "approver": "Priya", "role": "analyst"}).json()
+    assert next(p for p in case["plan"] if p["action"]["hash"] == h)["state"] == "verified"
+    assert c.post("/api/session/advance", json={"hours": 26}).status_code == 200
+    case = c.get("/api/case").json()
+    assert case["closed"] is True and case["status"] == "verified"
