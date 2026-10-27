@@ -6,6 +6,7 @@ trips no guard. Otherwise the template is used. Replies never promise what canno
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from typing import Any
 
@@ -164,7 +165,9 @@ def polish(draft: ReplyDraft, llm: LLM | None, source_released: bool) -> ReplyDr
         return draft
     sys = ("Rewrite this customer-support reply to sound warm and natural in the SAME language. Keep every number, "
            "name and date exactly. Do not add promises, links, bank details or new facts. Reply as JSON: {\"text\": \"...\"}")
-    data, _ = llm.complete_json("reply_polish", sys, json.dumps({"reply": draft.text, "language": draft.language}))
+    # Rewording is cosmetic: a laptop-CPU model would add tens of seconds per reply for no safety value, so it is off unless asked for.
+    data, _ = llm.complete_json("reply_polish", sys, json.dumps({"reply": draft.text, "language": draft.language}),
+                                local_ok=os.environ.get("RIPPLE_LLM_LOCAL_POLISH", "").lower() == "on")
     if not data or not isinstance(data.get("text"), str):
         return draft
     new = " ".join(data["text"].split())

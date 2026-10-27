@@ -37,6 +37,7 @@ Autonomy is a tie with the plain agent; the plain agent is cheaper in the modele
 Cannot be done from this machine, needs you or outside systems:
 - Run against a hosted identity provider over https, a real Vault or AWS account, and a live model (needs credentials and endpoints).
 - Held-out scenarios written by someone other than the author (the benchmark is self-authored).
+- Try a small text model for the local fallback (`ollama pull qwen2.5:3b`, about 2 GB) and re-run `python -m app.intake.evaluate_local`.
 - A backup screen recording of the demo.
 - Durable storage: cases live in memory and a restart wipes them; only meaningful once real source systems exist.
 
@@ -54,10 +55,14 @@ Cannot be done from this machine, needs you or outside systems:
 | Demo rehearsal script (`scripts/demo_check.py`) | **Done**: five rounds, every beat asserted, about 2 s a round in-process. Does not check how pages look |
 | Pitch deck | **Done**: 8 slides with speaker notes in a private shared deck (link in the session); numbers come from the frozen benchmark and the intake evaluation |
 
+| Free local model fallback (Ollama) | **Done and tested** (57 tests incl. mutation-checked network guards; live on this laptop and from the container). **Measured: safe but close to neutral** with the installed 3B vision model; a small text model is untried: [LOCAL_LLM.md](LOCAL_LLM.md) |
+| Admin "Language model" card and `/api/admin/llm` | **Done** |
+| Security-event log survives restarts (set aside, not deleted, if unreadable) | **Done and tested** |
+
 ### Still left
 - Sign-in against a hosted identity provider over https (Keycloak over http is done), silent renewal and key rotation against a real IdP, secrets against a real Vault or AWS account, and the agent with a live model.
 - Image scan, read-only root filesystem, https termination in front of the container.
 - Held-out scenarios written by someone other than the author; a live-model comparison for System C.
 - `frozen-v2`: fix the intake gaps listed in INTAKE_EVAL.md (Devanagari word boundaries, ETA rule order, a few patterns, stricter supplier flag), re-run the benchmark, evaluate on new messages.
-- Security-event log file is re-created empty at each start (the anchor is the only surviving evidence of an earlier run); persistence for cases and the security log.
+- Persistence for cases (they live in memory).
 - A backup screen recording of the demo (only you can make it) and one full click-through before presenting.

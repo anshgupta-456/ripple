@@ -56,7 +56,7 @@ def _body(e: AuditEntry) -> str:
 
 
 class AuditLog:
-    def __init__(self, path: Path | None = None, secret: str | None = None):
+    def __init__(self, path: Path | None = None, secret: str | None = None, resume: bool = False):
         self.entries: list[AuditEntry] = []
         self.path = path
         self.log_id = f"{path.name if path else 'memory'}#{uuid.uuid4().hex[:8]}"     # names this chain in external anchors (one per process run)
@@ -67,7 +67,34 @@ class AuditLog:
         self._fernet = Fernet(enc_key)
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("", encoding="utf-8")
+            self.rotated_to: Path | None = None
+            if resume and path.exists() and path.stat().st_size > 0:
+                self._resume(path)
+            else:
+                path.write_text("", encoding="utf-8")
+
+    def _resume(self, path: Path) -> None:
+        """Continue an existing log (the process-wide security log must survive a restart). If it cannot be read with this key, or its
+        chain does not verify, it is NOT deleted: it is renamed aside as evidence and a new chain starts with a note saying so."""
+        entries: list[AuditEntry] = []
+        ok, why = True, ""
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                entries.append(AuditEntry(**json.loads(self._fernet.decrypt(line.encode()))))
+        except (InvalidToken, ValueError):
+            ok, why = False, "unreadable with the current key"
+        if ok and not verify_entries(entries, self._mac_key)["ok"]:
+            ok, why = False, "chain did not verify"
+        if ok:
+            self.entries = entries
+            return
+        stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        self.rotated_to = path.with_name(f"{path.name}.unreadable-{stamp}")
+        path.rename(self.rotated_to)
+        path.write_text("", encoding="utf-8")
+        from datetime import timezone
+        self.add(datetime.now(timezone.utc), "security.log_rotated", outcome="ok", code="previous_log_set_aside",
+                 reason=why, moved_to=self.rotated_to.name)
 
     def add(self, ts: datetime, kind: str, *, case_id: str = "", action_hash: str = "", outcome: str = "",
             code: str = "", **data: Any) -> AuditEntry:

@@ -27,7 +27,7 @@ from app.config import ROOT, load_config
 from app.executor.executor import Executor
 from app.firewall.firewall import Firewall, FirewallContext
 from app.firewall.stores import ApprovalStore, ConsentStore
-from app.llm.client import LLM
+from app.llm.client import LLM, llm_status, warm_up
 from app.mock_sources.world import FAULT_MODES
 from app.models.contracts import Action, CaseStatus
 from app.security.audit_security import get_security_log, security_event
@@ -691,6 +691,12 @@ def killswitch_set(body: KillBody, user: User = Depends(require("killswitch.set"
     return KILL.state()
 
 
+@app.get("/api/admin/llm")
+def llm_info(user: User = Depends(require("killswitch.set"))) -> dict[str, Any]:
+    """Which model would answer right now (Claude, the local Ollama model, or neither), and what is paused. Never returns a key."""
+    return llm_status()
+
+
 @app.get("/api/admin/security-log")
 def security_log(user: User = Depends(require("audit.verify"))) -> dict[str, Any]:
     log = get_security_log()
@@ -705,4 +711,5 @@ async def unhandled(request: Request, exc: Exception):
     return JSONResponse({"detail": "internal error"}, status_code=500)
 
 
+warm_up()           # free local model (Ollama) into memory in the background, if it is wanted and running
 mount_spa(app)      # last: serves the built single-page app on the same origin when frontend/dist exists (RIPPLE_STATIC_DIR overrides)

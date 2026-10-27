@@ -4,11 +4,13 @@ import { useAuth } from "../auth";
 import { Btn, Card, ErrorNote, Mono, fmtTime, usePolling } from "../components/ui";
 
 type Log = Awaited<ReturnType<typeof api.securityLog>>;
+type Llm = Awaited<ReturnType<typeof api.llmStatus>>;
 
 export default function Admin() {
   const { me, refresh } = useAuth();
   const [kill, setKill] = useState<{ global: boolean; users: string[] } | null>(null);
   const [log, setLog] = useState<Log | null>(null);
+  const [llm, setLlm] = useState<Llm | null>(null);
   const [target, setTarget] = useState("dev:priya");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -16,6 +18,7 @@ export default function Admin() {
   const load = () => {
     api.killState().then(setKill).catch((e) => setErr(String(e)));
     api.securityLog().then(setLog).catch(() => {});
+    api.llmStatus().then(setLlm).catch(() => {});
   };
   usePolling(load, 5000);
 
@@ -53,6 +56,16 @@ export default function Admin() {
               {!kill?.users.length && <li className="text-slate-500">No users disabled.</li>}
             </ul>
           </div>
+        </Card>
+
+        <Card title="Language model">
+          {llm ? (
+            <div className="space-y-2 text-sm">
+              <p>Order: <b>{llm.provider === "auto" ? "Claude first, then the local model" : llm.provider === "ollama" ? "local model only" : llm.provider === "anthropic" ? "Claude only" : "none (unknown setting)"}</b> · mode <Mono>{llm.mode}</Mono></p>
+              <p>Claude: {llm.anthropic.key_configured ? <>key configured, model <Mono>{llm.anthropic.model}</Mono>{llm.anthropic.paused && <b className="text-amber-600"> · paused after a failure</b>}</> : <span className="text-slate-500">no key (costs money, so it is optional)</span>}</p>
+              <p>Local (Ollama): {!llm.ollama.enabled ? <span className="text-slate-500">off</span> : llm.ollama.reachable ? <>running, model <Mono>{llm.ollama.model}</Mono>{llm.ollama.paused && <b className="text-amber-600"> · paused after a failure</b>}</> : <b className="text-amber-600">not reachable at {llm.ollama.url}</b>}</p>
+              <p className="text-xs text-slate-500">Calls this run: Claude {llm.calls.anthropic}, local {llm.calls.ollama}, fallbacks {llm.calls.fallbacks}, failures {llm.calls.failures}. With no model the agent uses its deterministic rules. The local model is only asked when the rules are unsure, and it can only suggest a read-only intent.</p>
+            </div>) : <p className="text-sm text-slate-500">Loading…</p>}
         </Card>
 
         <Card title="Your access">

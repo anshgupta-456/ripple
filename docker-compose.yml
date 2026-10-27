@@ -14,6 +14,12 @@ services:
         required: false
     environment:
       RIPPLE_ENV: ${RIPPLE_ENV:-prod}
+      # Language model (all optional; with none the agent uses its deterministic rules). A container cannot reach the host's 127.0.0.1:
+      # to use Ollama on the host set RIPPLE_OLLAMA_URL=http://host.docker.internal:11434 and RIPPLE_OLLAMA_ALLOWED_HOSTS=host.docker.internal.
+      RIPPLE_LLM_PROVIDER: ${RIPPLE_LLM_PROVIDER:-auto}
+      RIPPLE_OLLAMA_URL: ${RIPPLE_OLLAMA_URL:-}
+      RIPPLE_OLLAMA_ALLOWED_HOSTS: ${RIPPLE_OLLAMA_ALLOWED_HOSTS:-}
+      RIPPLE_OLLAMA_MODEL: ${RIPPLE_OLLAMA_MODEL:-}
     volumes:
       - ripple-data:/var/ripple
     cap_drop: [ALL]                             # a read-only root filesystem is a further hardening step: /app/data needs a writable mount first

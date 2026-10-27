@@ -137,6 +137,9 @@ export const api = {
   me: () => j<Me>("/api/auth/me"),
   killState: () => j<{ global: boolean; users: string[] }>("/api/admin/killswitch"),
   killSet: (scope: "global" | "user", on: boolean, target = "") => j<{ global: boolean; users: string[] }>("/api/admin/killswitch", { scope, target, on }),
+  llmStatus: () => j<{ mode: string; provider: string; anthropic: { key_configured: boolean; model: string; paused: boolean };
+    ollama: { enabled: boolean; url: string; local_only: boolean; reachable: boolean; model: string | null; installed: string[]; paused: boolean };
+    calls: Record<string, number> }>("/api/admin/llm"),
   securityLog: () => j<{ verify: { ok: boolean; entries?: number }; entries: { seq: number; ts: string; kind: string; outcome: string; code: string; data: Record<string, any>; actor: { sub: string } | null }[] }>("/api/admin/security-log"),
   auditVerify: (sid?: string) => j<{ memory: { ok: boolean; entries?: number; reason?: string }; file: { ok: boolean; entries?: number; reason?: string } }>(q("/api/audit/verify", sid)),
   deleteCase: (sid: string) => j<{ deleted: string }>(`/api/cases/${encodeURIComponent(sid)}`, undefined, "DELETE"),

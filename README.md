@@ -41,7 +41,7 @@ Open the UI, press **Reset** (flagship: Rs 72,000 held, Rs 60,000 due Tuesday, K
 - Evaluator ground truth is written to `data/ground_truth/`, never returned by the API, and a test forbids agent-side packages from importing it.
 
 ## LLM usage
-The LLM is optional. `RIPPLE_LLM=auto|cache_only|off` (default auto), `RIPPLE_LLM_MODEL` (default claude-haiku-5-5), `ANTHROPIC_API_KEY` + `pip install anthropic` to enable live calls. Without them everything runs on deterministic rules. The LLM only extracts fields and rephrases replies; outputs are validated and it never decides, gates or executes. Responses are cached in `data/llm_cache.json`.
+A model is optional: with none, everything runs on deterministic rules. Claude (`ANTHROPIC_API_KEY`, costs money) and **Ollama on your own machine (free, offline)** are both supported. By default Claude is used if a key exists, and the local model takes over whenever Claude is missing, failing or over its cap; `RIPPLE_LLM_PROVIDER=ollama` uses only the local model. The local model is boxed in (asked only when the rules are unsure, can only suggest read-only intents) and, measured honestly with a 3B model on this laptop, is safe but adds almost no accuracy: [docs/LOCAL_LLM.md](docs/LOCAL_LLM.md). Outputs are validated and a model never decides, gates or executes. Responses are cached in `data/llm_cache.json`, keyed by tenant, provider and model.
 
 ## Benchmark
 ```

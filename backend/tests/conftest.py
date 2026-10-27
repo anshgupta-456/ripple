@@ -7,6 +7,7 @@ import pytest
 _TMP = tempfile.mkdtemp(prefix="ripple-test-")
 os.environ["RIPPLE_ENV"] = "dev"
 os.environ["RIPPLE_DATA_DIR"] = _TMP
+os.environ["RIPPLE_LLM_LOCAL"] = "off"      # tests never talk to a model server that happens to run on this laptop
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -34,5 +35,7 @@ def _clean_security_state():
     main.ACTIVE.clear()
     KILL.reset_for_tests()
     LIMITER.reset()
+    from app.llm import client as llm_client
+    llm_client.reset_state()                       # the provider circuit breaker is process-wide
     yield
     KILL.reset_for_tests()

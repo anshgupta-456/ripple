@@ -26,6 +26,9 @@ Settings go in a `.env` next to the compose file (not committed): `RIPPLE_OIDC_I
 role/tenant claim names, and the secret-store settings in [SECRETS.md](SECRETS.md). Secrets (audit key, model key) should come from
 Vault / AWS Secrets Manager, not from `.env`.
 
+## Local model (Ollama) from the container
+The container cannot reach the host's `127.0.0.1`. Set `RIPPLE_OLLAMA_URL=http://host.docker.internal:11434` and `RIPPLE_OLLAMA_ALLOWED_HOSTS=host.docker.internal` (in `.env` or the shell); `docker-compose.yml` passes them through. Verified: the container reached the host's Ollama and answered an ambiguous message through it. Details and measured quality: [LOCAL_LLM.md](LOCAL_LLM.md).
+
 ## Real-IdP check with Keycloak
 ```
 docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up --build     # then open http://localhost:8000

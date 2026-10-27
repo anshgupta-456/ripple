@@ -14,7 +14,7 @@ def get_security_log() -> AuditLog:
     global _LOG
     if _LOG is None:
         try:
-            _LOG = AuditLog(data_dir() / "security_audit.jsonl")
+            _LOG = AuditLog(data_dir() / "security_audit.jsonl", resume=True)       # survives a restart; never silently truncated
         except RuntimeError:            # audit key missing in prod: keep events in memory rather than dropping them
             _LOG = AuditLog()
     return _LOG

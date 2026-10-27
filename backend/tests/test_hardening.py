@@ -322,3 +322,47 @@ def test_audience_claim_setting_is_validated(monkeypatch):
     monkeypatch.setenv("RIPPLE_OIDC_AUDIENCE_CLAIM", "azp")
     with pytest.raises(oidc.OidcError):
         oidc.oidc_settings()
+
+
+# ---------------------------------------------------------------- the security log survives a restart
+def test_a_resumed_log_continues_the_same_chain(tmp_path):
+    p = tmp_path / "security_audit.jsonl"
+    a = AuditLog(p, secret="k1", resume=True)
+    for i in range(3):
+        a.add(datetime(2026, 1, 1, tzinfo=timezone.utc), "security.x", outcome=f"o{i}")
+    b = AuditLog(p, secret="k1", resume=True)                                    # "restart"
+    assert [e.seq for e in b.entries] == [1, 2, 3] and b.rotated_to is None
+    b.add(datetime(2026, 1, 2, tzinfo=timezone.utc), "security.y")
+    assert b.verify()["ok"] and b.verify_file()["ok"] and len(b.verify_file().keys()) and b.verify_file()["entries"] == 4
+    assert AuditLog(p, secret="k1", resume=True).entries[-1].kind == "security.y"
+
+
+def test_a_log_that_cannot_be_read_is_set_aside_not_deleted(tmp_path):
+    p = tmp_path / "security_audit.jsonl"
+    old = AuditLog(p, secret="old-key", resume=True)
+    old.add(datetime(2026, 1, 1, tzinfo=timezone.utc), "security.secret")
+    before = p.read_text()
+    new = AuditLog(p, secret="different-key", resume=True)                        # key changed, e.g. a dev restart
+    assert new.rotated_to is not None and new.rotated_to.read_text() == before     # evidence kept byte for byte
+    assert [e.kind for e in new.entries] == ["security.log_rotated"] and new.entries[0].data["reason"] == "unreadable with the current key"
+    assert new.verify()["ok"]
+
+
+def test_a_tampered_log_is_set_aside_with_the_reason(tmp_path):
+    p = tmp_path / "security_audit.jsonl"
+    a = AuditLog(p, secret="k", resume=True)
+    for i in range(3):
+        a.add(datetime(2026, 1, 1, tzinfo=timezone.utc), "security.x", outcome=f"o{i}")
+    lines = p.read_text().splitlines()
+    p.write_text("\n".join([lines[0], lines[2]]) + "\n")                          # one entry removed from the middle
+    b = AuditLog(p, secret="k", resume=True)
+    assert b.rotated_to is not None and b.entries[0].data["reason"] == "chain did not verify"
+
+
+def test_case_logs_still_start_empty_and_the_security_log_uses_resume(tmp_path):
+    p = tmp_path / "audit_c.jsonl"
+    AuditLog(p, secret="k").add(datetime(2026, 1, 1, tzinfo=timezone.utc), "x")
+    assert AuditLog(p, secret="k").entries == []
+    import inspect
+    from app.security import audit_security
+    assert "resume=True" in inspect.getsource(audit_security.get_security_log)
