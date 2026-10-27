@@ -446,8 +446,10 @@ def _converse(s: Session, text: str | None = None) -> None:
 def seed_portfolio(body: SeedBody) -> list[dict[str, Any]]:
     """Replace the portfolio with one case per scenario family (canonical flagship), each already handled by the agent."""
     SESSIONS.clear()
-    for fam in body.families or list(REGISTRY):
-        scn = generate(fam, CANONICAL_SEED, canonical=(fam == "missing_evidence_flagship"))
+    for i, fam in enumerate(body.families or list(REGISTRY)):
+        # the flagship keeps the canonical demo numbers; other families get distinct seeds so merchants differ
+        scn = generate(fam, CANONICAL_SEED if fam == "missing_evidence_flagship" else CANONICAL_SEED + i,
+                       canonical=(fam == "missing_evidence_flagship"))
         s = _add(Session(scn))
         if body.send_messages:
             _converse(s)
