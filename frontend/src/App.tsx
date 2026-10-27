@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Analysis, api, ScenarioInfo, SessionState, WorldEvent } from "./api";
+import { Analysis, AdversarialSummary, api, AuditEntry, Decision, ExecResult, ProposedAction, ScenarioInfo, SessionState, WorldEvent } from "./api";
 
 function AnalysisCard({ a }: { a: Analysis }) {
   return (
@@ -37,6 +37,8 @@ function AnalysisCard({ a }: { a: Analysis }) {
 
 const DOCS = ["invoice", "delivery_proof", "customer_comm"];
 
+const tierName = (t: number | null) => ({ 1: "agent alone", 2: "merchant consent", 3: "human approval", 4: "never" } as Record<number, string>)[t ?? 0] ?? "-";
+
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -68,6 +70,11 @@ export default function App() {
   const [log, setLog] = useState("");
   const [live, setLive] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [proposal, setProposal] = useState<{ action: ProposedAction; decision: Decision } | null>(null);
+  const [exec, setExec] = useState<ExecResult | null>(null);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [adv, setAdv] = useState<AdversarialSummary | null>(null);
+  const refreshAudit = useCallback(async () => setAudit(await api.audit()), []);
   const esRef = useRef<EventSource | null>(null);
 
   const refresh = useCallback(async () => setState(await api.state()), []);
@@ -148,30 +155,65 @@ export default function App() {
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Card title="Dev: manual tool calls (firewall arrives in Phase 3)">
+            <Card title="Action pipeline: propose → approve → execute (firewall + audit on every step)">
               <div className="flex flex-wrap gap-2 text-sm">
                 {disputeId && (
-                  <button className="rounded border px-2 py-1"
-                    onClick={() => run(() => api.tool("submit_dispute_evidence", { dispute_id: disputeId, docs: DOCS }, "ui-evidence-1"))}>
-                    Submit full evidence
-                  </button>
+                  <button className="rounded border px-2 py-1" onClick={() => run(async () => {
+                    setExec(null); setProposal(await api.propose("submit_dispute_evidence", { dispute_id: disputeId, docs: DOCS })); await refreshAudit();
+                  })}>1. Propose evidence</button>
                 )}
-                {disputeId && (
-                  <button className="rounded border px-2 py-1"
-                    onClick={() => run(() => api.tool("submit_dispute_evidence", { dispute_id: disputeId, docs: ["invoice"] }, `ui-partial-${Date.now()}`))}>
-                    Submit partial evidence
-                  </button>
-                )}
-                <button className="rounded border px-2 py-1"
-                  onClick={() => run(() => api.tool("send_kyc_reminder", {}, `ui-kyc-${Date.now()}`))}>
-                  KYC reminder
-                </button>
+                <button className="rounded border px-2 py-1" disabled={!proposal}
+                  onClick={() => run(async () => { await api.approve(proposal!.action.hash, "Priya (risk analyst)", "analyst"); setProposal(await api.propose(proposal!.action.type, proposal!.action.params)); await refreshAudit(); })}>
+                  2. Approve as analyst</button>
+                <button className="rounded border border-red-300 px-2 py-1 text-red-700" disabled={!proposal}
+                  onClick={() => run(async () => { await api.approve(proposal!.action.hash, "ripple", "agent"); })}>
+                  Try approving as agent (403)</button>
+                <button className="rounded border px-2 py-1" disabled={!proposal}
+                  onClick={() => run(async () => { setExec(await api.execute(proposal!.action.hash)); await refreshAudit(); })}>3. Execute</button>
                 <button className="rounded border border-red-300 px-2 py-1 text-red-700"
-                  onClick={() => run(() => api.tool("release_risk_hold", {}, "ui-attack"))}>
-                  Try release_risk_hold (expect 404)
-                </button>
+                  onClick={() => run(async () => { setExec(null); setProposal(await api.propose("release_risk_hold")); await refreshAudit(); })}>
+                  Attack: release_risk_hold</button>
+                <button className="rounded border px-2 py-1"
+                  onClick={() => run(async () => setAdv(await api.adversarial()))}>Run adversarial suite</button>
               </div>
+              {proposal && (
+                <p className="mt-3 text-sm">
+                  <code>{proposal.action.type}</code> · tier {proposal.decision.tier} ({tierName(proposal.decision.tier)}) ·{" "}
+                  <b className={proposal.decision.allowed ? "text-emerald-700" : "text-red-700"}>
+                    {proposal.decision.allowed ? "allowed" : `denied: ${proposal.decision.code}`}
+                  </b>
+                  <span className="text-slate-500"> — {proposal.decision.reason}</span>
+                </p>
+              )}
+              {exec && (
+                <p className="mt-1 text-sm">
+                  outcome <b>{exec.outcome}</b> · ladder {exec.ladder.join(" → ") || "(none)"}
+                  {exec.reconciled && " · reconciled by idempotency key"}
+                  {exec.verification && <> · verification <b>{exec.verification.state}</b> ({exec.verification.reason})</>}
+                </p>
+              )}
+              {adv && (
+                <p className="mt-2 text-sm">
+                  Adversarial suite: {adv.action_cases - adv.unsafe_actions}/{adv.action_cases} attacks blocked ·
+                  <b className={adv.unsafe_actions === 0 ? " text-emerald-700" : " text-red-700"}> unsafe actions = {adv.unsafe_actions}</b> ·
+                  injection screening: {adv.screening_misses.length} misses, {adv.screening_false_positives.length} false positives
+                </p>
+              )}
             </Card>
+            <Card title={`Audit trail (${audit.length})`}>
+              <ul className="max-h-72 space-y-1 overflow-auto text-xs font-mono">
+                {audit.slice().reverse().map((e) => (
+                  <li key={e.seq}>
+                    <span className="text-slate-500">#{e.seq}</span> <b>{e.kind}</b>{" "}
+                    <span className={e.outcome === "deny" ? "text-red-700" : ""}>{e.outcome}</span> {e.code}
+                  </li>
+                ))}
+                {audit.length === 0 && <li className="text-slate-500">empty</li>}
+              </ul>
+            </Card>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Card title={`Event stream (${events.length})`}>
               <ul className="max-h-72 space-y-1 overflow-auto text-xs">
                 {events.map((e) => (

@@ -64,12 +64,28 @@ export interface Analysis {
   chosen: RankedAction;
 }
 
+export interface ProposedAction { type: string; hash: string; tier: number; params: Record<string, unknown> }
+export interface Decision { allowed: boolean; code: string; reason: string; tier: number | null; needs: string | null }
+export interface ExecResult {
+  action_hash: string; action_type: string; outcome: string; firewall: Decision; ladder: string[];
+  reconciled: boolean; retried: boolean; verified: boolean;
+  verification: { state: string; reason: string } | null;
+}
+export interface AuditEntry { seq: number; ts: string; kind: string; outcome: string; code: string; action_hash: string; data: Record<string, unknown> }
+export interface AdversarialSummary { action_cases: number; unsafe_actions: number; screening_cases: number; screening_misses: string[]; screening_false_positives: string[] }
+
 export const api = {
   analyze: () => j<Analysis>("/api/session/analyze", {}),
   scenarios: () => j<ScenarioInfo[]>("/api/scenarios"),
   state: () => j<SessionState>("/api/session/state"),
   reset: (family: string) => j<SessionState>("/api/session/reset", { family }),
   advance: (hours: number) => j<SessionState>("/api/session/advance", { hours }),
-  tool: (tool: string, params: object, idem_key: string) =>
-    j<{ result: unknown }>("/api/dev/tool", { tool, params, idem_key }),
+  propose: (type: string, params: object = {}) =>
+    j<{ action: ProposedAction; decision: Decision }>("/api/actions/propose", { type, params }),
+  approve: (action_hash: string, approver: string, role: string) =>
+    j<unknown>("/api/approvals/issue", { action_hash, approver, role }),
+  consent: (action_hash: string) => j<unknown>("/api/consents/issue", { action_hash }),
+  execute: (action_hash: string) => j<ExecResult>("/api/actions/execute", { action_hash }),
+  audit: () => j<AuditEntry[]>("/api/audit"),
+  adversarial: () => j<AdversarialSummary>("/api/adversarial/run", {}),
 };
