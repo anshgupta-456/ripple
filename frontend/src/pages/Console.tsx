@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, CaseSummary, Kpis, ScenarioInfo } from "../api";
+import { useAuth } from "../auth";
 import { Bar, Btn, Card, ErrorNote, StatusChip, Tile, hoursLabel, usePolling } from "../components/ui";
 
 type Filter = "all" | "person" | "auto" | "escalated" | "verified";
@@ -8,6 +9,8 @@ const FILTERS: [Filter, string][] = [["all", "All"], ["person", "Needs a person"
 const waitLabel = (w: string | null) => ({ analyst: "Analyst", merchant: "Merchant", source: "Source system" } as Record<string, string>)[w ?? ""] ?? "-";
 
 export default function Console() {
+  const { can } = useAuth();
+  const demo = can("demo.control");
   const [rows, setRows] = useState<CaseSummary[]>([]);
   const [k, setK] = useState<Kpis | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -37,11 +40,11 @@ export default function Console() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold">Ops Console</h1>
         <span className="text-sm text-slate-500">Every case the agent is handling, and what each one is waiting on.</span>
-        <div className="ml-auto flex flex-wrap gap-2">
+        {demo && <div className="ml-auto flex flex-wrap gap-2">
           <Btn kind="primary" disabled={busy} onClick={() => act(() => api.seed())}>Load demo portfolio</Btn>
           <Btn disabled={busy || !rows.length} onClick={() => act(() => api.advanceAll(6))}>Advance all +6h</Btn>
           <Btn disabled={busy || !rows.length} onClick={() => act(() => api.advanceAll(26))}>+26h</Btn>
-        </div>
+        </div>}
       </div>
       <ErrorNote text={err} />
 
@@ -55,7 +58,7 @@ export default function Console() {
         <Tile label="Unsafe actions" value={k?.unsafe_actions ?? "-"} sub="independent audit" tone={k ? (k.unsafe_actions === 0 ? "good" : "bad") : ""} />
       </div>
 
-      <Card title="Simulate an incoming merchant message">
+      {demo && <Card title="Simulate an incoming merchant message">
         <form className="flex flex-wrap items-start gap-2" onSubmit={(e) => { e.preventDefault(); act(() => api.newCase(family, text)); }}>
           <select className="rounded-md border border-slate-300 bg-transparent px-2 py-1.5 text-sm dark:border-slate-700" value={family} onChange={(e) => setFamily(e.target.value)}>
             {families.map((f) => <option key={f.family} value={f.family}>{f.family.replaceAll("_", " ")}</option>)}
@@ -66,14 +69,14 @@ export default function Console() {
           <Btn kind="primary" disabled={busy}>Send</Btn>
         </form>
         <p className="mt-2 text-xs text-slate-500">Creates a new case in a fresh synthetic world and runs the agent on it.</p>
-      </Card>
+      </Card>}
 
       <Card title={`Case queue (${shown.length})`}
         right={<div className="flex flex-wrap gap-1">{FILTERS.map(([f, label]) => (
           <button key={f} onClick={() => setFilter(f)}
             className={`rounded-full border px-2.5 py-0.5 text-xs ${filter === f ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 dark:border-slate-700"}`}>{label}</button>))}</div>}>
         {rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">No cases yet. Load the demo portfolio, or simulate a merchant message above.</p>
+          <p className="py-8 text-center text-sm text-slate-500">No cases yet. {demo ? "Load the demo portfolio, or simulate a merchant message above." : "An admin can load the demo portfolio."}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[56rem] text-left text-sm">

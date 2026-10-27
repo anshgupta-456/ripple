@@ -52,9 +52,11 @@ export interface Kpis {
 }
 export interface PendingApproval {
   sid: string; case_id: string; merchant: string; family: string; label: string; tier: number; sim_now: string;
-  hours_to_deadline: number | null; action: PlannedAction["action"]; memo: Memo | null;
+  hours_to_deadline: number | null; can_decide: boolean; action: PlannedAction["action"]; memo: Memo | null;
   bundle: { docs: string[]; dispute_id: string; missing: string[]; summary: string[]; provenance_note: string } | null;
 }
+export interface Me { sub: string; name: string; roles: string[]; tenant: string; expires_at: number; perms: string[]; kill_switch: { global: boolean; users: string[] } }
+export interface PublicCfg { banner: string; auth: { env: string; dev_login: boolean; oidc_configured: boolean } }
 export interface ScenarioInfo { family: string; split: string; description: string }
 export interface SessionState {
   session_id: string; banner: string;
@@ -101,12 +103,18 @@ export interface LabResult { preset: string; family: string; description: string
 export interface LabPresets { presets: { id: string; family: string; description: string }[]; attack_texts: string[] }
 export interface AdversarialSummary { action_cases: number; unsafe_actions: number; screening_cases: number; screening_misses: string[]; screening_false_positives: string[] }
 
-async function j<T>(path: string, body?: unknown): Promise<T> {
+// The access token lives in memory only (never localStorage/sessionStorage), so a script that can read storage cannot steal it.
+let token: string | null = null;
+export const setToken = (t: string | null) => { token = t; };
+export const hasToken = () => !!token;
+
+async function j<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const res = await fetch(path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: { "Content-Type": "application/json" },
+    method: method ?? (body === undefined ? "GET" : "POST"),
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (res.status === 401) window.dispatchEvent(new Event("ripple-auth"));
   if (!res.ok) {
     let msg = await res.text();
     try { const d = JSON.parse(msg); msg = typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail ?? d); } catch { /* keep text */ }
@@ -115,11 +123,20 @@ async function j<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 const q = (path: string, sid?: string) => (sid ? `${path}${path.includes("?") ? "&" : "?"}sid=${encodeURIComponent(sid)}` : path);
-const ANALYST = { approver: "Priya (risk analyst)", role: "analyst" };
 
 export const api = {
   health: () => j<{ ok: boolean }>("/api/health"),
-  config: () => j<PublicConfig>("/api/config/public"),
+  publicConfig: () => j<PublicCfg>("/api/config/public"),
+  assumptions: () => j<PublicConfig>("/api/config/assumptions"),
+  devLogin: (persona: string) => j<{ token: string; expires_at: number; user: { sub: string; name: string; roles: string[] } }>("/api/auth/dev-login", { persona }),
+  personas: () => j<{ id: string; name: string; roles: string[] }[]>("/api/auth/personas"),
+  me: () => j<Me>("/api/auth/me"),
+  killState: () => j<{ global: boolean; users: string[] }>("/api/admin/killswitch"),
+  killSet: (scope: "global" | "user", on: boolean, target = "") => j<{ global: boolean; users: string[] }>("/api/admin/killswitch", { scope, target, on }),
+  securityLog: () => j<{ verify: { ok: boolean; entries?: number }; entries: { seq: number; ts: string; kind: string; outcome: string; code: string; data: Record<string, any>; actor: { sub: string } | null }[] }>("/api/admin/security-log"),
+  auditVerify: (sid?: string) => j<{ memory: { ok: boolean; entries?: number; reason?: string }; file: { ok: boolean; entries?: number; reason?: string } }>(q("/api/audit/verify", sid)),
+  deleteCase: (sid: string) => j<{ deleted: string }>(`/api/cases/${encodeURIComponent(sid)}`, undefined, "DELETE"),
+  purge: () => j<{ deleted_files: number; retention_days: number }>("/api/admin/purge", {}),
   scenarios: () => j<ScenarioInfo[]>("/api/scenarios"),
   // portfolio
   cases: () => j<CaseSummary[]>("/api/cases"),
@@ -132,7 +149,7 @@ export const api = {
   caseGet: (sid?: string) => j<CaseView>(q("/api/case", sid)),
   caseMessage: (text: string, sid?: string) => j<CaseView>(q("/api/case/message", sid), { text }),
   caseDecide: (action_hash: string, approve: boolean, sid?: string) =>
-    j<CaseView>(q("/api/case/decide", sid), { action_hash, approve, ...ANALYST }),
+    j<CaseView>(q("/api/case/decide", sid), { action_hash, approve }),
   caseEdit: (action_hash: string, docs: string[], sid?: string) => j<CaseView>(q("/api/case/edit", sid), { action_hash, docs }),
   caseConsent: (action_hash: string, accept: boolean, sid?: string) => j<CaseView>(q("/api/case/consent", sid), { action_hash, accept }),
   advance: (hours: number, sid?: string) => j<SessionState>(q("/api/session/advance", sid), { hours }),

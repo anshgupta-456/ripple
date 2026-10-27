@@ -83,12 +83,13 @@ function ApprovalCard({ item, onDone }: { item: PendingApproval; onDone: (msg: s
         </div>
       ) : <p className="mt-2 text-sm text-slate-500">No memo attached.</p>}
       <ErrorNote text={err} />
-      <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+      {!item.can_decide && <p className="mt-3 rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">Read-only: only a signed-in analyst can approve, edit or reject. Admins cannot approve risk actions.</p>}
+      {item.can_decide && <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
         <Btn kind="good" disabled={busy || editing} onClick={approve}>Approve</Btn>
         {!editing ? <Btn disabled={busy} onClick={() => setEditing(true)}>Edit bundle</Btn>
           : <><Btn kind="primary" disabled={busy || docs.length === 0} onClick={saveEdit}>Save edit</Btn><Btn disabled={busy} onClick={() => { setEditing(false); setDocs(item.bundle?.docs ?? []); }}>Cancel</Btn></>}
         <Btn kind="danger" disabled={busy || editing} onClick={reject}>Reject</Btn>
-      </div>
+      </div>}
     </Card>
   );
 }

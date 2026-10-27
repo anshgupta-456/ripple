@@ -12,12 +12,13 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 - Phase 4 done: intake (rules + optional cached LLM, Hindi/English/Hinglish), fact-bound replies in three languages, evidence bundle, analyst memo, orchestrator loop with multi-turn follow-ups, attack tripwire, case API (`/api/case/message|decide|consent`), chat + approval-card UI.
 - Phase 5 done: 12 scenario families, baselines A-D plus full RIPPLE (E), seeded runner, metrics with Wilson CIs, independent tool-layer policy auditor, config frozen at tag `frozen-v1`, scored results in `data/results/bench_frozen-v1.json`, scoreboard card in the UI. Protocol and **disclosures**: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 - Phase 6 done: full dashboard. **Ops Console** (live queue, KPIs, simulate a merchant message), **Case** page (chat, source context, trace graph with the decoy dashed, ranked actions incl. do-nothing, Why? drawer, state ladder, audit log), **Approvals** (one-tap card, bundle edit changes the action hash), **Scoreboard** (metrics with CIs, per-family wins/losses, assumptions, disclosures), **Lab** (System C vs RIPPLE on the same world, chaos panel, judge-typed attacks, approval replay). Click-by-click script: [docs/DEMO.md](docs/DEMO.md).
-- Next: polish and presentation (deck, rehearsal, backup video). Optional: live-LLM version of System C, more families.
+- Security pass done: authentication on every route (OIDC validation + dev personas), RBAC from the token only, tenant isolation, PII redaction, LLM data gate/spend cap/host allowlist, HMAC-chained encrypted audit log, kill switch, rate limits, retention and deletion. Threat model, data flows and an honest control matrix with gaps: [docs/SECURITY.md](docs/SECURITY.md).
+- Next: polish and presentation (deck, rehearsal, backup video). Optional: real IdP integration, secrets-manager adapter, live-LLM System C.
 
 ## Run
 ```
-# backend
-cd backend && python -m pip install -e ".[dev]" && python -m uvicorn app.main:app --reload --port 8000
+# backend (RIPPLE_ENV=dev turns on demo mode: persona login, demo controls; the default is secure production mode)
+cd backend && python -m pip install -e ".[dev]" && RIPPLE_ENV=dev python -m uvicorn app.main:app --reload --port 8000
 # frontend
 cd frontend && npm install && npm run dev      # http://localhost:5173
 # tests

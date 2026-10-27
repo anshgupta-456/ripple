@@ -9,3 +9,6 @@ data/ground_truth/*.yaml
 data/*.sqlite
 data/*.jsonl
 data/results/bench_dev.json
+data/killswitch.json
+data/llm_cache.json
+data/security_audit.jsonl

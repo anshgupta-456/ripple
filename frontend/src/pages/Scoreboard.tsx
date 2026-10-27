@@ -63,7 +63,7 @@ export default function Scoreboard() {
   const [err, setErr] = useState("");
   usePolling(() => {
     if (!b) api.bench().then(setB).catch((e) => setErr(String(e)));
-    if (!cfg) api.config().then(setCfg).catch(() => {});
+    if (!cfg) api.assumptions().then(setCfg).catch(() => {});
   }, 5000, [!!b, !!cfg]);
 
   if (err && !b) return <Card><p className="text-sm">No benchmark results yet. Run <Mono>python -m app.bench.run --label dev</Mono> in the backend folder.</p></Card>;
