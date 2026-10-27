@@ -34,8 +34,6 @@ RIPPLE works end to end on synthetic data: it traces the cause of a merchant's p
 Autonomy is a tie with the plain agent; the plain agent is cheaper in the modeled cost and missed no avoidable deadline; the benchmark is self-authored. See [BENCHMARK.md](BENCHMARK.md).
 
 ## What is left
-Work in progress (this stage): single-origin production serving with CSP/HSTS, Dockerfile and compose, tenant-scoped model cache, session eviction, audit-head anchoring, Cognito-style audience, demo rehearsal script, larger intake test set, pitch deck.
-
 Cannot be done from this machine, needs you or outside systems:
 - Run against a real identity provider, a real Vault or AWS account, and a live model (needs credentials and endpoints).
 - Held-out scenarios written by someone other than the author (the benchmark is self-authored).
@@ -43,5 +41,23 @@ Cannot be done from this machine, needs you or outside systems:
 - Docker image build and compose check (the Docker daemon was not running when this was written).
 - Durable storage: cases live in memory and a restart wipes them; only meaningful once real source systems exist.
 
-## Progress since this document was first written
-(Updated at the end of each work stage.)
+## Progress since this document was first written (2026-10-27)
+| Item | State |
+|---|---|
+| Single-origin serving: API serves the built app; strict CSP (token origin from validated discovery); HSTS in prod; traversal-safe paths; unknown `/api` is a JSON 404 | **Done and tested** (22 tests; mutation of the traversal guard is caught). SSO sign-in checked in a real browser under the CSP, no violations |
+| Dockerfile, compose, demo override, `docs/DEPLOY.md` | **Written, never built**: Docker daemon was not running. Treat as untested |
+| Model-cache keys scoped by tenant | **Done and tested** (mutation caught) |
+| Idle-case TTL and case cap with least-recently-used eviction | **Done and tested** |
+| Audit chain-head external anchor (file or https sink; detects truncation and rewrite; dead sink counted, never blocks) | **Done and tested** (mutation caught); **off by default** until `RIPPLE_AUDIT_ANCHOR` is set to storage the app cannot rewrite |
+| Cognito-style `client_id` audience mode | **Done, tested against a mock of the token shape only** |
+| Larger labelled intake set and honest report | **Done**: 120 messages, intent 80%, 5 of 14 forbidden requests missed (no unsafe action resulted). Rules deliberately not tuned (benchmark is frozen). [INTAKE_EVAL.md](INTAKE_EVAL.md) |
+| Demo rehearsal script (`scripts/demo_check.py`) | **Done**: five rounds, every beat asserted, about 2 s a round in-process. Does not check how pages look |
+| Pitch deck | **Done**: 8 slides with speaker notes in a private shared deck (link in the session); numbers come from the frozen benchmark and the intake evaluation |
+
+### Still left
+- Build the container image and run compose once (needs Docker running).
+- Run sign-in against a real identity provider (Keycloak in Docker is the cheapest), secrets against a real Vault or AWS account, and the agent with a live model.
+- Held-out scenarios written by someone other than the author; a live-model comparison for System C.
+- `frozen-v2`: fix the intake gaps listed in INTAKE_EVAL.md (Devanagari word boundaries, ETA rule order, a few patterns, stricter supplier flag), re-run the benchmark, evaluate on new messages.
+- Security-event log file is re-created empty at each start (the anchor is the only surviving evidence of an earlier run); persistence for cases and the security log.
+- A backup screen recording of the demo (only you can make it) and one full click-through before presenting.

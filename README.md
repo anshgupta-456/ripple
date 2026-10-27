@@ -14,7 +14,10 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 - Phase 6 done: full dashboard. **Ops Console** (live queue, KPIs, simulate a merchant message), **Case** page (chat, source context, trace graph with the decoy dashed, ranked actions incl. do-nothing, Why? drawer, state ladder, audit log), **Approvals** (one-tap card, bundle edit changes the action hash), **Scoreboard** (metrics with CIs, per-family wins/losses, assumptions, disclosures), **Lab** (System C vs RIPPLE on the same world, chaos panel, judge-typed attacks, approval replay). Click-by-click script: [docs/DEMO.md](docs/DEMO.md).
 - Security pass done: authentication on every route (OIDC validation + dev personas), RBAC from the token only, tenant isolation, PII redaction, LLM data gate/spend cap/host allowlist, HMAC-chained encrypted audit log, kill switch, rate limits, retention and deletion. Threat model, data flows and an honest control matrix with gaps: [docs/SECURITY.md](docs/SECURITY.md).
 - Real sign-in and secrets: browser **OIDC authorization code + PKCE** sign-in ([docs/OIDC.md](docs/OIDC.md)) and **Vault / AWS Secrets Manager** adapters ([docs/SECRETS.md](docs/SECRETS.md)), tested against local mocks (mock IdP, mock Vault, moto) and in a real browser. Not yet tested against a production IdP, Vault or AWS account.
-- Next: polish and presentation (deck, rehearsal, backup video). Optional: run the flow against a real IdP, CSP on the SPA host, live-LLM System C.
+- Production shape: the API serves the built web app on one origin with a strict **Content-Security-Policy** (IdP token origin taken from validated discovery), HSTS in production, traversal-safe static paths; `Dockerfile` + compose written (**image not built yet: Docker daemon was unavailable**). [docs/DEPLOY.md](docs/DEPLOY.md).
+- Hardening: model-cache keys scoped by tenant, idle/over-cap cases evicted, audit chain-head **external anchor** (file or https sink; truncation and rewrite detected), Cognito-style `client_id` audience mode (mock-tested only).
+- Measured honestly: intake rules on 120 hand-labelled Hindi/English/Hinglish messages (intent 80%, 5 of 14 forbidden requests missed, none caused an unsafe action): [docs/INTAKE_EVAL.md](docs/INTAKE_EVAL.md). `python scripts/demo_check.py` rehearses every demo beat through the API.
+- What is built and what is left: [docs/STATUS.md](docs/STATUS.md). Still needs outside systems or other people: real IdP/Vault/AWS/live-model runs, held-out scenarios written by someone else, a backup demo video, a built container image.
 
 ## Run
 ```
@@ -26,6 +29,8 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 cd backend && python -m pytest -q
 ```
 Windows: `scripts/dev.ps1` starts both.
+
+One origin, production-shaped (see [docs/DEPLOY.md](docs/DEPLOY.md)): `cd frontend && npm ci && npm run build`, then `cd backend && python -m uvicorn app.main:app --port 8000` serves the app and the API together. Demo rehearsal: `python scripts/demo_check.py`.
 
 ## Phase 1 demo by hand
 Open the UI, press **Reset** (flagship: Rs 72,000 held, Rs 60,000 due Tuesday, KYC decoy), **Submit full evidence**, then **+26h**: dispute `won`, settlement `released` before Tuesday 17:00. Try `release_risk_hold`: no such tool exists (404). Inject a timeout via `POST /api/dev/fault` and reconcile by idempotency key.
