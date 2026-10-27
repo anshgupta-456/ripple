@@ -43,8 +43,8 @@ class Executor:
             raise PermissionError(d.reason)
         return self.w.call(tool)
 
-    def execute(self, action: Action, ctx: FirewallContext) -> ExecResult:
-        d = self.fw.check(action, ctx)
+    def execute(self, action: Action, ctx: FirewallContext, approval=None, consent=None) -> ExecResult:
+        d = self.fw.check(action, ctx, approval, consent)
         res = ExecResult(action_hash=action.hash, action_type=action.type, outcome="denied", firewall=d)
         if not d.allowed:
             return res
