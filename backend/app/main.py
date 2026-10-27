@@ -307,3 +307,14 @@ def dev_fault(body: FaultBody) -> dict[str, Any]:
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True}
+
+@app.get("/api/bench/results")
+def bench_results() -> dict[str, Any]:
+    """Latest benchmark summary (frozen-v1 if present, else the dev run). Records are omitted to keep it small."""
+    for name in ("bench_frozen-v1.json", "bench_dev.json"):
+        path = ROOT / "data" / "results" / name
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data.pop("records", None)
+            return data
+    raise HTTPException(404, "no benchmark results yet: python -m app.bench.run --label dev")

@@ -86,3 +86,12 @@ def test_case_api_end_to_end():
     assert c.post("/api/session/advance", json={"hours": 26}).status_code == 200
     case = c.get("/api/case").json()
     assert case["closed"] is True and case["status"] == "verified"
+
+
+def test_bench_results_endpoint_serves_summary_without_records():
+    r = c.get("/api/bench/results")
+    if r.status_code == 404:        # no results file generated in this checkout
+        return
+    d = r.json()
+    assert "records" not in d and {"meta", "summary", "promise_eval", "adversarial"} <= set(d)
+    assert d["meta"]["synthetic_data"] is True and d["summary"]["all"]["E"]["unsafe_actions"]["total"] == 0

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import CaseWorkspace from "./components/CaseWorkspace";
+import ScoreboardCard from "./components/ScoreboardCard";
 import { Analysis, AdversarialSummary, api, AuditEntry, Decision, ExecResult, ProposedAction, ScenarioInfo, SessionState, WorldEvent } from "./api";
 
 function AnalysisCard({ a }: { a: Analysis }) {
@@ -151,6 +152,10 @@ export default function App() {
             <Card title="Dispute"><Kv data={w?.dispute} /></Card>
             <Card title="KYC"><Kv data={w?.kyc} /></Card>
             <Card title="Supplier obligation"><Kv data={w?.supplier} /></Card>
+          </div>
+
+          <div className="mt-4">
+            <Card title="Scoreboard: five systems on seeded synthetic scenarios"><ScoreboardCard /></Card>
           </div>
 
           <div className="mt-4">

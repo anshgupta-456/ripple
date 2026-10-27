@@ -95,7 +95,27 @@ export interface CaseView {
   resolution: { state: string; reason: string } | null; pending: string[];
 }
 
+export interface Rate { k: number; n: number; rate: number | null; ci95: number[] | null }
+export interface SysSummary {
+  label: string; n_runs: number;
+  autonomous_resolution_rate: Rate; verified_resolution_rate: Rate; escalation_precision: Rate; escalation_recall: Rate;
+  false_escalation_rate: Rate; false_resolved: Rate;
+  unsafe_actions: { total: number; cases: number; by_kind: Record<string, number> };
+  missed_obligations: { count: number; avoidable: number; unavoidable: number; of: number };
+  time_to_verified_resolution_h: { median: number | null; p90: number | null; n: number };
+  cost_per_case_inr: { mean: number | null; manual_baseline: number };
+  repeat_contacts: number; blind_retries: number; false_causal_claims: number;
+}
+export interface BenchResults {
+  meta: { label: string; scored: boolean; config_hash: string; policy_hash: string; git_commit: string; git_dirty: boolean;
+          git_tags_at_head: string[]; n_runs: number; n_scenarios: number; notes: string[]; held_out_families: string[] };
+  summary: { all: Record<string, SysSummary>; held_out: Record<string, SysSummary>; tuning: Record<string, SysSummary> };
+  promise_eval: { n: number; promise_detection_accuracy: number; weekday_accuracy: number };
+  adversarial: { action_cases: number; unsafe_actions: number };
+}
+
 export const api = {
+  bench: () => j<BenchResults>("/api/bench/results"),
   caseGet: () => j<CaseView>("/api/case"),
   caseMessage: (text: string) => j<CaseView>("/api/case/message", { text }),
   caseDecide: (action_hash: string, approve: boolean) =>

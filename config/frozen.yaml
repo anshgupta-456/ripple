@@ -12,7 +12,7 @@ simulation:
 
 benchmark:
   # Families never used for tuning thresholds, prompts or weights.
-  # supplier_promise_unsaveable was removed from this list on 2026-10-28: the dev run exposed a harm-model gap on it
+  # supplier_promise_unsaveable was removed from this list on 2026-10-27: the dev run exposed a harm-model gap on it
   # (fixing the cause had no benefit once the deadline was lost) and the model was changed, so it is no longer clean held-out.
   held_out_families:
     - no_action
