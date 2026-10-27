@@ -16,6 +16,7 @@ from app.security.settings import is_dev
 
 _BACKENDS: list[Callable[[str], str | None]] = []
 _LOADED: dict[str, str] = {}
+_EPHEMERAL: dict[str, str] = {}          # dev-only random values; never returned outside RIPPLE_ENV=dev
 
 
 def register_backend(fn: Callable[[str], str | None]) -> None:
@@ -35,7 +36,7 @@ def get_secret(name: str, *, required: bool = True, dev_ephemeral: bool = False)
             if val:
                 break
     if not val and dev_ephemeral and is_dev():
-        val = _secrets.token_urlsafe(48)           # ephemeral: restart invalidates anything derived from it
+        return _EPHEMERAL.setdefault(name, _secrets.token_urlsafe(48))   # ephemeral: restart invalidates anything derived from it
     if not val:
         if required:
             raise RuntimeError(f"secret {name} is not configured (set {name}, {name}_FILE, or register a secrets backend)")
@@ -45,6 +46,7 @@ def get_secret(name: str, *, required: bool = True, dev_ephemeral: bool = False)
 
 
 def forget_all() -> None:
+    """Drop cached REAL secrets (tests / rotation). Ephemeral dev keys live separately and only ever apply in dev."""
     _LOADED.clear()
 
 
@@ -60,7 +62,7 @@ class SecretScrubFilter(logging.Filter):
             msg = record.getMessage()
         except Exception:
             return True
-        for v in _LOADED.values():
+        for v in list(_LOADED.values()) + list(_EPHEMERAL.values()):
             if v and v in msg:
                 msg = msg.replace(v, "***")
                 record.msg, record.args = msg, ()

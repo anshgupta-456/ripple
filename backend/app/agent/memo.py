@@ -9,6 +9,7 @@ from app.agent.evidence import EvidenceBundle
 from app.agent.reply import fmt_dt, inr
 from app.config import load_config
 from app.engine.decide import DecisionReport
+from app.security.redact import redact
 from app.intake.extract import IntakeResult
 from app.timeline.normalizer import Timeline
 
@@ -68,6 +69,7 @@ def build_memo(intake: IntakeResult, raw_message: str, tl: Timeline, report: Dec
     mins = load_config()["cost_model"]["prebuilt_memo_minutes_saved"]
     chosen = report.chosen
     cause = report.trace.root_cause or "none"
+    raw_message = redact(raw_message)
     summary = (f"{raw_message.strip()[:140]} | cause: {cause} | recommended: {chosen.label} "
                f"(P(miss) {chosen.p_miss:.0%} vs {report.p_miss_do_nothing:.0%} if nothing) | "
                f"disposition: {report.disposition.value}.")

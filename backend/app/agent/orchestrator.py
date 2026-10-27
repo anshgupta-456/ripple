@@ -112,6 +112,16 @@ class Orchestrator:
 
     _claim = False
 
+    def _decide(self, tl: Timeline) -> DecisionReport:
+        """Run the deterministic engine and record WHY in the audit trail: seed, graph version, chosen action, triggers."""
+        r = decide(tl, set(self.w.tools), self.seed, self._prev_graph, trace_mode=self.trace_mode)
+        self.audit.add(self.w.now, "decision", case_id=self.s.case_id, outcome=r.disposition.value, code=r.chosen.id,
+                       seed=r.seed, graph_version=r.graph.version, graph_digest=r.graph.digest, stability=r.stability,
+                       p_miss_do_nothing=r.p_miss_do_nothing, triggers=r.triggers, trace_status=r.trace.status.value,
+                       root_cause=r.trace.root_cause, rejected_edges=[e["src"] for e in r.trace.rejected_edges],
+                       trace_mode=self.trace_mode)
+        return r
+
     def _say(self, kind: str, **facts: Any) -> ExecResult | None:
         draft: ReplyDraft = compose(kind, self.s.language, **facts)
         released = self._read("read_settlement")["status"] == "released"
@@ -257,7 +267,7 @@ class Orchestrator:
     def _settlement_case(self, intake: IntakeResult, text: str) -> CaseState:
         s = self.s
         tl = self._timeline()
-        report = decide(tl, set(self.w.tools), self.seed, self._prev_graph, trace_mode=self.trace_mode)
+        report = self._decide(tl)
         self._prev_graph, s.report = report.graph, report
         self._step("Traced cause", " ← ".join(report.trace.path) or "no blocker")
         for e in report.trace.rejected_edges:
@@ -465,7 +475,7 @@ class Orchestrator:
     # ------------------------------------------------------------------ follow-ups
     def _eta_reply(self, waiting: bool) -> None:
         tl = self._timeline()
-        report = decide(tl, set(self.w.tools), self.seed, self._prev_graph, trace_mode=self.trace_mode)
+        report = self._decide(tl)
         self._prev_graph, self.s.report = report.graph, report
         nl = ""
         pend = next((p for p in self.s.plan if p.state == "awaiting_consent"), None)
@@ -486,7 +496,7 @@ class Orchestrator:
             return s
         if any(p.state == "awaiting_approval" for p in s.plan):
             tl = self._timeline()
-            report = decide(tl, set(self.w.tools), self.seed, self._prev_graph, trace_mode=self.trace_mode)
+            report = self._decide(tl)
             best = next((r for r in report.ranked if r.id.startswith("SUBMIT_DISPUTE_EVIDENCE")), None)
             h = best.release_p50_h if best and best.release_p50_h else None
             if h is not None:
