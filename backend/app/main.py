@@ -241,6 +241,20 @@ def public_config() -> dict[str, Any]:
     return {"banner": c["synthetic_data_banner"], "auth": describe_env()}
 
 
+@app.get("/api/auth/oidc-config")
+def oidc_config() -> dict[str, Any]:
+    """Public, non-secret settings for the SPA's authorization-code + PKCE flow. Endpoints come from the IdP's discovery
+    document, validated server-side (issuer match, https, allowed hosts). There is no client secret to return."""
+    from app.security import oidc as _oidc
+    try:
+        st = _oidc.oidc_settings()
+        if st is None:
+            raise HTTPException(404, "OIDC sign-in is not configured")
+        return _oidc.browser_config(st)
+    except _oidc.OidcError as e:
+        raise HTTPException(e.status, e.detail)
+
+
 @app.post("/api/auth/dev-login")
 def dev_login(body: DevLoginBody, request: Request) -> dict[str, Any]:
     """Demo-only persona login (RIPPLE_ENV=dev). Mints a 15-minute token; in production this route does not exist."""

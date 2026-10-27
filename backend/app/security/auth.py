@@ -9,17 +9,18 @@ body. Case access is also scoped by tenant, and merchants only by their own merc
 """
 from __future__ import annotations
 
-import json
+import os
 import time
-import urllib.parse
-import urllib.request
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import jwt
 from fastapi import Depends, Header, HTTPException
 
+from app.security import oidc
 from app.security.governance import ACTOR, KILL, LIMITER
+from app.security.oidc import OidcError, OidcSettings, oidc_settings
 from app.security.secret_store import get_secret
 from app.security.settings import DEV_TOKEN_LIFETIME_S, MAX_TOKEN_LIFETIME_S, env, is_dev
 
@@ -77,30 +78,32 @@ _JWKS_CACHE: dict[str, tuple[float, Any]] = {}
 _jwks_client_factory: Callable[[str], Any] | None = None     # tests inject a fake
 
 
-def _oidc_conf() -> tuple[str, str]:
-    iss = get_secret("RIPPLE_OIDC_ISSUER", required=False)
-    aud = get_secret("RIPPLE_OIDC_AUDIENCE", required=False)
-    if not iss or not aud:
+def _settings() -> OidcSettings:
+    try:
+        st = oidc_settings()
+    except OidcError as e:
+        raise AuthError(e.detail, e.status)
+    if st is None:
         raise AuthError("authentication is not configured (RIPPLE_OIDC_ISSUER / RIPPLE_OIDC_AUDIENCE); refusing all requests", 503)
-    return iss.rstrip("/"), aud
+    return st
 
 
-def _jwks_client(issuer: str):
-    cached = _JWKS_CACHE.get(issuer)
+def _jwks_client(st: OidcSettings):
+    cached = _JWKS_CACHE.get(st.issuer)
     if cached and cached[0] > time.time():
         return cached[1]
     if _jwks_client_factory:
-        client = _jwks_client_factory(issuer)
+        client = _jwks_client_factory(st.issuer)
     else:
-        if urllib.parse.urlparse(issuer).scheme != "https":
-            raise AuthError("OIDC issuer must be https", 503)
-        with urllib.request.urlopen(issuer + "/.well-known/openid-configuration", timeout=5) as r:     # noqa: S310
-            conf = json.loads(r.read())
-        uri = conf["jwks_uri"]
-        if urllib.parse.urlparse(uri).hostname != urllib.parse.urlparse(issuer).hostname:
-            raise AuthError("jwks_uri host does not match the issuer host", 503)       # domain allowlist
-        client = jwt.PyJWKClient(uri, cache_keys=True, timeout=5)
-    _JWKS_CACHE[issuer] = (time.time() + 600, client)
+        try:
+            conf = oidc.discover(st.issuer, st)       # https/loopback, issuer match, jwks host allowlist
+        except OidcError as e:
+            raise AuthError(e.detail, e.status)
+        # An unknown kid refetches the JWKS (key rotation), but at most once per cooldown: unauthenticated callers cannot make us
+        # hammer the IdP by sending tokens with random key ids. IdPs publish new keys ahead of use, so the delay is harmless.
+        client = jwt.PyJWKClient(conf["jwks_uri"], cache_keys=True, lifespan=300, timeout=5,
+                                 cooldown_duration=float(os.environ.get("RIPPLE_OIDC_JWKS_COOLDOWN", "30")))
+    _JWKS_CACHE[st.issuer] = (time.time() + 600, client)
     return client
 
 
@@ -108,15 +111,16 @@ def _dev_key() -> str:
     return get_secret("RIPPLE_DEV_JWT_KEY", dev_ephemeral=True)      # type: ignore[return-value]
 
 
-def _to_user(claims: dict[str, Any]) -> User:
-    roles = frozenset(r for r in (claims.get("roles") or []) if r in ROLES)
+def _to_user(claims: dict[str, Any], st: OidcSettings | None = None) -> User:
+    roles = oidc.roles_from_claims(claims, st, ROLES)
     if not roles:
         raise AuthError("token carries no recognised role", 403)
-    tenant = claims.get("tenant") or claims.get("tid")
+    tenant = oidc.tenant_from_claims(claims, st)
     if not tenant:
         raise AuthError("token carries no tenant", 403)
     return User(sub=str(claims["sub"]), name=str(claims.get("name") or claims["sub"]), roles=roles, tenant=str(tenant),
-                merchant_id=claims.get("merchant_id"), exp=int(claims["exp"]))
+                merchant_id=claims.get("merchant_id"), exp=int(claims["exp"]),
+                extra={"iss": claims.get("iss"), "jti": claims.get("jti"), "iat": claims.get("iat")})
 
 
 def verify_token(token: str) -> User:
@@ -124,6 +128,7 @@ def verify_token(token: str) -> User:
         alg = jwt.get_unverified_header(token).get("alg", "")
     except jwt.PyJWTError:
         raise AuthError("malformed token")
+    st: OidcSettings | None = None
     try:
         if alg == "HS256":
             if not is_dev():
@@ -131,21 +136,24 @@ def verify_token(token: str) -> User:
             claims = jwt.decode(token, _dev_key(), algorithms=["HS256"], issuer=DEV_ISS, audience="ripple-api",
                                 options={"require": ["exp", "iat", "sub"]})
         elif alg in ("RS256", "ES256"):
-            iss, aud = _oidc_conf()
-            key = _jwks_client(iss).get_signing_key_from_jwt(token).key
-            claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], issuer=iss, audience=aud,
-                                options={"require": ["exp", "iat", "sub"]})
+            st = _settings()
+            key = _jwks_client(st).get_signing_key_from_jwt(token).key
+            # some IdPs (Auth0) put a trailing slash in iss; accept either form of the ONE configured issuer
+            claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], issuer=[st.issuer, st.issuer + "/"],
+                                audience=st.audience, options={"require": ["exp", "iat", "sub"]})
         else:
             raise AuthError("unsupported token algorithm")
     except AuthError:
         raise
     except jwt.ExpiredSignatureError:
         raise AuthError("token expired")
+    except jwt.PyJWKClientConnectionError:
+        raise AuthError("identity provider unreachable", 503)
     except jwt.PyJWTError as e:
         raise AuthError(f"invalid token: {type(e).__name__}")
     if int(claims["exp"]) - int(claims["iat"]) > MAX_TOKEN_LIFETIME_S:
         raise AuthError("token lifetime exceeds the one-hour maximum; long-lived tokens are refused")
-    return _to_user(claims)
+    return _to_user(claims, st)
 
 
 def issue_dev_token(persona: str, tenant: str = DEV_TENANT) -> tuple[str, User]:
@@ -162,6 +170,24 @@ def issue_dev_token(persona: str, tenant: str = DEV_TENANT) -> tuple[str, User]:
 
 
 # ---------------------------------------------------------------- FastAPI dependencies
+_SEEN: "OrderedDict[str, None]" = OrderedDict()
+
+
+def _note_login(user: User) -> None:
+    """The backend never sees the browser redirect, so the first request carrying a new OIDC token is the audited login."""
+    if user.extra.get("iss") == DEV_ISS:
+        return                                                       # dev persona logins are audited at /api/auth/dev-login
+    key = f"{user.sub}|{user.extra.get('jti') or user.extra.get('iat')}|{user.exp}"
+    if key in _SEEN:
+        _SEEN.move_to_end(key)
+        return
+    _SEEN[key] = None
+    if len(_SEEN) > 2000:
+        _SEEN.popitem(last=False)
+    from app.security.audit_security import security_event
+    security_event("login", user, outcome="ok", code="oidc", issuer=user.extra.get("iss"))
+
+
 async def current_user(authorization: str | None = Header(default=None)) -> User:
     """async on purpose: it sets the actor context that the audit log reads, in the request's own task."""
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -170,6 +196,7 @@ async def current_user(authorization: str | None = Header(default=None)) -> User
         user = verify_token(authorization.split(" ", 1)[1].strip())
     except AuthError as e:
         raise HTTPException(e.status, e.detail, headers={"WWW-Authenticate": "Bearer"} if e.status == 401 else None)
+    _note_login(user)
     ACTOR.set({"sub": user.sub, "name": user.name, "roles": sorted(user.roles), "tenant": user.tenant})
     return user
 
@@ -194,4 +221,8 @@ def blocked_reason(user: User) -> str | None:
 
 
 def describe_env() -> dict[str, Any]:
-    return {"env": env(), "dev_login": is_dev(), "oidc_configured": bool(get_secret("RIPPLE_OIDC_ISSUER", required=False))}
+    try:
+        st = oidc_settings()
+    except OidcError:
+        st = None
+    return {"env": env(), "dev_login": is_dev(), "oidc_configured": bool(st), "oidc_login": bool(st and st.client_id)}

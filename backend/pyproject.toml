@@ -10,7 +10,7 @@ dependencies = [
   "pyyaml>=6.0",
   "networkx>=3.2",
   "numpy>=1.26",
-  "pyjwt[crypto]>=2.8",
+  "pyjwt[crypto]>=2.15",
   "cryptography>=42",
 ]
 
