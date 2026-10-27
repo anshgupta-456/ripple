@@ -23,6 +23,7 @@ class DisputeSpec(BaseModel):
     review_hours: float = 20
     review_outcome: Literal["won", "lost"] = "won"
     release_delay_hours: float = 6
+    initial_status: Literal["evidence_required", "submitted", "under_review", "lost", "won"] = "evidence_required"
 
 
 class KycSpec(BaseModel):
@@ -38,6 +39,13 @@ class SupplierSpec(BaseModel):
     due_at: datetime
 
 
+class RefundSpec(BaseModel):
+    refund_id: str
+    amount: int
+    status: Literal["processing", "completed"] = "processing"
+    complete_at: datetime | None = None
+
+
 class WorldSpec(BaseModel):
     merchant_id: str
     merchant_name: str
@@ -47,3 +55,4 @@ class WorldSpec(BaseModel):
     dispute: DisputeSpec | None = None
     kyc: KycSpec = Field(default_factory=KycSpec)
     supplier: SupplierSpec | None = None
+    refund: RefundSpec | None = None

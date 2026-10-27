@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from app.mock_sources.spec import DisputeSpec, KycSpec, SettlementSpec, SupplierSpec
+from app.mock_sources.spec import DisputeSpec, KycSpec, RefundSpec, SettlementSpec, SupplierSpec
 from app.models.contracts import Source
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -63,7 +63,7 @@ class DisputeSource:
         self.w = world
         self.spec = spec
         self.merchant_id = merchant_id
-        self.status = "evidence_required"
+        self.status = spec.initial_status
         self.evidence: dict[str, Any] | None = None
 
     def read(self) -> dict[str, Any]:
@@ -176,3 +176,23 @@ class NotificationSource:
         self.w.emit(Source.NOTIFICATION, "merchant_message_sent", {"text": text},
                     f"notification:{self.merchant_id}")
         return {"ok": True, "n": len(self.log)}
+
+
+class RefundSource:
+    def __init__(self, world: "World", merchant_id: str, spec: RefundSpec):
+        self.w = world
+        self.merchant_id = merchant_id
+        self.spec = spec.model_copy(deep=True)
+        if self.spec.status == "processing" and self.spec.complete_at:
+            world.schedule(self.spec.complete_at, "refund_complete", {})
+
+    def read(self) -> dict[str, Any]:
+        sp = self.spec
+        return {"refund_id": sp.refund_id, "status": sp.status, "amount": sp.amount,
+                "expected_by": _iso(sp.complete_at)}
+
+    def _complete(self) -> None:
+        if self.spec.status == "processing":
+            self.spec.status = "completed"
+            self.w.emit(Source.SETTLEMENT, "refund_completed", {"amount": self.spec.amount},
+                        f"refund:{self.spec.refund_id}")

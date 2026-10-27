@@ -8,6 +8,7 @@ reads:   # read-only tools, tier 1, no parameters
   - read_dispute
   - read_kyc
   - read_supplier_obligation
+  - read_refund
   - read_notifications
 
 actions:

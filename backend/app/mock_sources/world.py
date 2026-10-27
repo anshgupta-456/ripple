@@ -11,6 +11,7 @@ from app.mock_sources.sources import (
     DisputeSource,
     KycSource,
     NotificationSource,
+    RefundSource,
     SettlementSource,
     SupplierSource,
 )
@@ -62,11 +63,13 @@ class World:
         self.kyc = KycSource(self, mid, spec.kyc)
         self.supplier = SupplierSource(self, spec.supplier)
         self.notifications = NotificationSource(self, mid)
+        self.refund = RefundSource(self, mid, spec.refund) if spec.refund else None
 
         self._handlers = {
             "settlement_release": lambda _p: self.settlement._release(),
             "dispute_under_review": lambda _p: self.dispute and self.dispute._start_review(),
             "dispute_decision": lambda _p: self.dispute and self.dispute._decide(),
+            "refund_complete": lambda _p: self.refund and self.refund._complete(),
         }
         self.tools = self._build_tools()
 
@@ -82,6 +85,8 @@ class World:
             "send_merchant_message": ToolDef("send_merchant_message",
                                              lambda text: self.notifications.send_message(text), True),
         }
+        if self.refund:
+            t["read_refund"] = ToolDef("read_refund", lambda: self.refund.read(), False)
         if self.dispute:
             t["read_dispute"] = ToolDef("read_dispute", lambda: self.dispute.read(), False)
             t["submit_dispute_evidence"] = ToolDef(
@@ -160,5 +165,6 @@ class World:
             "dispute": self.dispute.read() if self.dispute else None,
             "kyc": self.kyc.read(),
             "supplier": self.supplier.read(),
+            "refund": self.refund.read() if self.refund else None,
             "notifications": self.notifications.read(),
         }

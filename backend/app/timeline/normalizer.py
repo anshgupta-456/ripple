@@ -82,6 +82,12 @@ def collect(
             for key in ("supplier_id", "name", "amount", "due_at"):
                 put(f"supplier.{key}", sp.get(key), Source.SUPPLIER, ref)
 
+    if "read_refund" in available_tools:
+        rf = read("read_refund")
+        ref = f"refund:{rf['refund_id']}"
+        for key in ("refund_id", "status", "amount", "expected_by"):
+            put(f"refund.{key}", rf.get(key), Source.SETTLEMENT, ref)
+
     for k, v in (merchant_claims or {}).items():
         put(f"merchant.{k}", v, Source.MERCHANT, "merchant:message")
 
