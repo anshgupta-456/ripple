@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { api, PendingApproval } from "../api";
+import { useEffect } from "react";
+import { api, PendingApproval, RulesResult } from "../api";
 import { Btn, Card, ErrorNote, Mono, hoursLabel, usePolling } from "../components/ui";
 
 const ALL_DOCS = ["invoice", "delivery_proof", "customer_comm", "bank_statement", "courier_receipt"];
@@ -94,6 +95,32 @@ function ApprovalCard({ item, onDone }: { item: PendingApproval; onDone: (msg: s
   );
 }
 
+function RulesCard() {
+  const [r, setR] = useState<RulesResult | null>(null);
+  const [err, setErr] = useState("");
+  const load = () => api.rules().then(setR).catch((e) => setErr(String(e)));
+  useEffect(() => { load(); }, []);
+  const decide = (id: string, what: "confirm" | "reject" | "retire") => api.ruleDecide(id, what).then(load).catch((e) => setErr(String(e)));
+  if (!r) return null;
+  const shown = r.rules.filter((x) => x.status !== "rejected");
+  if (!shown.length && !r.override.n) return null;
+  return (
+    <Card title="Learned rules">
+      <p className="mb-2 text-xs text-slate-500">Rules come from your edits and from a low override rate. None activates until an analyst confirms it, and a rule can only pre-approve evidence bundles up to Rs {r.limits.max_auto_amount.toLocaleString("en-IN")} from the documents it names. Human decisions on evidence so far: {r.override.n} ({r.override.approve} approved, {r.override.edit} edited, {r.override.reject} rejected{r.override.override_rate !== null ? `; override rate ${(r.override.override_rate * 100).toFixed(0)}%` : ""}). Widening is proposed after {r.limits.widening.min_decisions} decisions with at most {(r.limits.widening.max_override_rate * 100).toFixed(0)}% overrides.</p>
+      <ErrorNote text={err} />
+      <ul className="space-y-2 text-sm">
+        {shown.map((x) => (
+          <li key={x.id} className="rounded-md border border-slate-200 p-2 dark:border-slate-700">
+            <p><Mono>{x.id}</Mono> <b className={x.status === "active" ? "text-emerald-700" : x.status === "proposed" ? "text-amber-700" : "text-slate-500"}>{x.status}</b> · {x.source === "analyst_edit" ? "from an analyst edit" : "from evidence"}{x.confirmed_by ? ` · confirmed by ${x.confirmed_by}` : ""}{x.status === "active" ? ` · used ${x.uses}x` : ""}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{x.note} Documents: {x.condition.docs.join(", ")}.</p>
+            {r.can_decide && x.status === "proposed" && <div className="mt-1 flex gap-2"><Btn kind="good" onClick={() => decide(x.id, "confirm")}>Confirm rule</Btn><Btn kind="danger" onClick={() => decide(x.id, "reject")}>Reject</Btn></div>}
+            {r.can_decide && x.status === "active" && <div className="mt-1"><Btn onClick={() => decide(x.id, "retire")}>Retire rule</Btn></div>}
+          </li>))}
+      </ul>
+    </Card>
+  );
+}
+
 export default function Approvals() {
   const [items, setItems] = useState<PendingApproval[]>([]);
   const [log, setLog] = useState<string[]>([]);
@@ -108,6 +135,7 @@ export default function Approvals() {
         <span className="text-sm text-slate-500">Tier 3 actions wait here. Everything is prepared; you decide.</span>
       </div>
       <ErrorNote text={err} />
+      <RulesCard />
       {log.length > 0 && (
         <Card title="Just decided">
           <ul className="space-y-1 text-sm">{log.slice(0, 5).map((l, i) => <li key={i}>{l}</li>)}</ul>

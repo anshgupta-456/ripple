@@ -165,3 +165,42 @@ export function RecordsPanel({ decisions, outcomes, followups }: { decisions: im
     </div>
   );
 }
+
+
+export function CascadePanel({ c }: { c: import("../api").Cascade }) {
+  return (
+    <div className="space-y-2 text-sm">
+      <table className="w-full text-left"><thead className="text-xs uppercase text-slate-500"><tr><th className="pr-2">Downstream</th><th className="pr-2">Lag</th><th className="pr-2">Passes on</th><th className="pr-2">Miss if nothing is done</th><th>With this plan</th></tr></thead>
+        <tbody>{c.nodes.map((n) => (<tr key={n.id} className="border-t border-slate-100 dark:border-slate-800"><td className="py-1 pr-2">{n.label} (Rs {n.amount.toLocaleString("en-IN")})</td><td className="pr-2">{n.lag_days} d</td><td className="pr-2">{(n.p_propagate * 100).toFixed(0)}%</td><td className="pr-2">{(n.p_miss_do_nothing * 100).toFixed(0)}%</td><td>{(n.p_miss_chosen * 100).toFixed(0)}%</td></tr>))}</tbody></table>
+      <p className="text-xs text-slate-500">Expected EMI-bounce penalty: Rs {c.expected_emi_penalty_do_nothing} if nothing is done, Rs {c.expected_emi_penalty_chosen} with this plan. {c.assumption}.</p>
+    </div>
+  );
+}
+
+export function ExtrasPanel({ c }: { c: import("../api").CaseView }) {
+  const b = c.extras?.bridge, u = c.extras?.udhaar;
+  if (!b && !u) return <p className="text-sm text-slate-500">Offers and recovery are considered only when the main rescue cannot save the supplier deadline.</p>;
+  return (
+    <div className="space-y-3 text-sm">
+      {b && <div><p className="text-xs font-semibold uppercase text-slate-500">Bridge offer</p>
+        {b.offered ? <p>Offered {b.kind?.replaceAll("_", " ")} of Rs {b.amount?.toLocaleString("en-IN")}, fee Rs {b.fee?.toLocaleString("en-IN")}, expected harm avoided Rs {b.value?.toLocaleString("en-IN")}. Needs the merchant's explicit tap.</p>
+          : <p>No offer: {b.reason}.</p>}</div>}
+      {u && <div><p className="text-xs font-semibold uppercase text-slate-500">Udhaar recovery</p>
+        {u.skip && <p>{u.skip}.</p>}
+        {u.candidates?.map((x) => <p key={x.debtor_id}>{x.label} to <b>{x.name}</b> (Rs {x.amount.toLocaleString("en-IN")} overdue), score {x.score}.</p>)}
+        {u.vetoes?.map((v) => <p key={v.name} className="text-amber-700">Human decides for {v.name}: {v.reason}.</p>)}</div>}
+    </div>
+  );
+}
+
+export function VoicePanel({ rows, online, onToggle }: { rows: import("../api").VoiceRow[]; online: boolean | null | undefined; onToggle?: () => void }) {
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex items-center gap-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${online ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"}`}>Soundbox {online ? "online" : "offline"}</span>
+        {onToggle && <button className="rounded-md border border-slate-300 px-2 py-0.5 text-xs dark:border-slate-700" onClick={onToggle}>Take {online ? "offline" : "online"} (demo)</button>}</div>
+      {rows.length === 0 ? <p className="text-slate-500">No messages yet.</p> :
+        <ul className="space-y-1">{rows.slice(-6).map((r) => <li key={r.id}><span className={`mr-1 rounded px-1.5 text-xs font-semibold ${r.channel === "soundbox" ? "bg-indigo-100 text-indigo-800" : "bg-slate-200 text-slate-700"}`}>{r.channel === "soundbox" ? "Soundbox" : "App only"}</span>{r.kind.replaceAll("_", " ")}: <span className="text-slate-500">{r.reason}</span></li>)}</ul>}
+      <p className="text-xs text-slate-500">In-app text is always delivered. Voice follows quiet hours (22:00 to 08:00), a daily cap, and falls back to the app when the device is offline.</p>
+    </div>
+  );
+}

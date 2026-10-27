@@ -95,6 +95,8 @@ Status: **Enforced** = code plus tests. **Partial** = real but limited. **Gap** 
 | Separate read from write; human confirmation for high impact | **Enforced** | tiers 1-4; evidence submission needs a hash-bound analyst approval; supplier notice needs exact-text merchant consent; no tool exists for releasing holds or changing bank details. |
 | Tool outputs and retrieved docs are untrusted | **Enforced** | structured fields only; merchant text is flagged and never routed to the model if it looks like an attack. |
 | Validate/sanitise every tool input and output; allowlist tools and domains | **Enforced** | policy schema validation, scope checks, outbound-text guard, tool allowlist, LLM host allowlist. |
+| Learned rules must not widen autonomy silently | **Enforced** | a rule is inactive until a named analyst confirms it (agents cannot); it can pre-approve only `submit_dispute_evidence`, up to Rs 100,000, for documents the rule names; issued through an allowlist with the rule id in the audit; Tier 4 never. Cost: the analyst still reviews every rule, and rules cover a narrow slice. |
+| Financial and third-party messages need an explicit tap | **Enforced** | `accept_bridge_offer` and `send_debtor_reminder` are Tier 2; a chat "yes" never accepts them and ambiguity means no action; amounts are range-checked in policy; debtor hardship or dispute blocks the message. Cost: slower, more taps. Offers are from a simulated lender. |
 | Rate-limit actions; spend/usage caps | **Enforced** | per-case action limits, per-user API limits, LLM call caps. The system has no tool that spends money. Caps are per process, not distributed. |
 
 ### Audit and observability

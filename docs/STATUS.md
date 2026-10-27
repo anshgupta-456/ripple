@@ -85,5 +85,26 @@ Source: "RIPPLE v3 - Winning Build Specification". Status as built, not as hoped
 | P3: portfolio view | **Built, illustrative**: 200 synthetic merchants with a planted cause distribution through the real engine |
 | Architecture: SQLite for records/audit, Streamlit UI | **SQLite**: decision records, memos, outcomes, ledger, follow-ups (the tamper-evident audit stays an encrypted HMAC-chained file). **UI is React**, not Streamlit, and has more than the three screens |
 | Tier 1 "schedule internal recheck" | **Built** (`schedule_follow_up`, through the firewall, idempotent) |
-| Deferred by the spec: bridge financing, udhaar recovery, learned rules, Soundbox hardware | **Not built, on purpose.** An earlier in-progress version of some of this was removed |
+| Deferred by the spec: bridge financing, udhaar recovery, learned rules, Soundbox hardware | **Soundbox hardware not built.** The others were built afterwards from the Full Feature Specification (next section) |
 | Demo script (3 minutes) and `scripts/demo_check.py` | **Built** |
+
+## Coverage of the "Full Feature Specification" (2026-10-27)
+Everything below is optional (`RIPPLE_EXTENSIONS`, on in the app, never on in the benchmark), so frozen-v2 results are unchanged (re-run: same summary and config hash). The policy hash differs from the one recorded in frozen-v2 because new, unused actions were added.
+
+| Feature | State |
+|---|---|
+| Learned rules | **Built.** Proposed from analyst edits or from evidence (10+ human decisions, at most 10% overrides). Active only after a named analyst confirms. A rule can only pre-approve `submit_dispute_evidence` up to Rs 100,000 for the documents it names; audited with the rule id |
+| Bridge offers | **Built, simulated lender.** Tier 2, explicit tap only (a chat "yes" never accepts a financial offer). Checks EMI burden (35% of inflow) and value at least 1.5x the fee; only when the rescue still leaves a miss risk of 0.5 or more. Parameters are assumptions |
+| Udhaar recovery | **Built, simulated.** Tier 2 reminders in three languages with fixed polite templates and a shame-word guard. Hardship, dispute or a fragile relationship means no message and a human decides |
+| Re-KYC link, scheduled follow-up | **Built** (Tier 1; no URL appears in message text) |
+| Dry run | **Built.** Shows the plan with no tool call; audited as `dry_run` |
+| Promise repair date | **Built.** Date only when supported (p90 release plus 6 hours), else "within about 3 days" |
+| Voice delivery policy | **Built, simulated Soundbox.** Quiet hours 22:00 to 08:00, 3 per day, offline falls back to the app. Not tested with real speech or hardware |
+| Cascade view | **Built.** Edge lag and propagation are assumed values in config |
+| Merchant "why" | **Built** in three languages, from the decision record only |
+| Escalation over weeks, override rate | **Built** (scripted analyst). Escalation falls with rules (about 0.6 to 0.24) against 0.56 to 0.76 without; unsafe actions 0. The override rate is noisy and **not clearly falling** in later weeks |
+| Hand-written held-out set, targets declared first | **Built**: 6 scenarios, targets committed in 60da3fa before the run, all 7 met. Same author as the engine, n=6, so weak evidence |
+| Effectiveness statistics | **Built** (shown on the case page; **not** fed back into the engine) |
+| 40 templates | **Not met** (14 families) |
+| Escalation-recall target for the main benchmark | **Not met** (declared only for the hand-written set) |
+| Case-file export | **Not built** |

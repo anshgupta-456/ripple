@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, AuditEntry, CaseView, Report, SessionState } from "../api";
 import ChatPanel from "../components/ChatPanel";
-import { ActionLog, ContextPanel, LedgerPanel, RankedTable, RecordsPanel, StateLadder, WhyDrawer } from "../components/CasePanels";
+import { ActionLog, CascadePanel, ContextPanel, ExtrasPanel, LedgerPanel, RankedTable, RecordsPanel, StateLadder, VoicePanel, WhyDrawer } from "../components/CasePanels";
 import TraceGraph from "../components/TraceGraph";
 import { useAuth } from "../auth";
 import { Btn, Card, ErrorNote, Mono, StatusChip, usePolling } from "../components/ui";
@@ -15,6 +15,7 @@ export default function CasePage({ sid }: { sid: string }) {
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [fresh, setFresh] = useState<Report | null>(null);
   const [err, setErr] = useState("");
+  const [dry, setDry] = useState("");
   const [actErr, setActErr] = useState("");     // errors from user actions stay until the next action (polling must not erase them)
 
   const load = () =>
@@ -84,6 +85,9 @@ export default function CasePage({ sid }: { sid: string }) {
               : <p className="text-sm text-slate-500">Nothing to rank yet.</p>}
           </Card>
 
+          {c?.cascade && <Card title="What a missed payment drags down"><CascadePanel c={c.cascade} /></Card>}
+          <Card title="Offers and recovery"><ExtrasPanel c={c ?? ({} as never)} /></Card>
+          <Card title="Voice and Soundbox"><VoicePanel rows={c?.voice ?? []} online={c?.soundbox_online} onToggle={can("demo.control") ? () => act(() => api.soundbox(!c?.soundbox_online, sid)) : undefined} /></Card>
           <Card title="Promise ledger"><LedgerPanel rows={c?.ledger ?? []} /></Card>
           <Card title="Decision records (SQLite)"><RecordsPanel decisions={c?.decisions ?? []} outcomes={c?.outcomes ?? []} followups={c?.followups ?? []} /></Card>
 
@@ -94,8 +98,10 @@ export default function CasePage({ sid }: { sid: string }) {
               <div className="flex gap-2">
                 <Btn kind="good" onClick={() => act(() => api.caseDecide(approval.action.hash, true, sid))}>Approve</Btn>
                 <Btn kind="danger" onClick={() => act(() => api.caseDecide(approval.action.hash, false, sid))}>Reject</Btn>
+                <Btn onClick={async () => { try { const d = await api.dryRun(approval.action.hash, sid); setDry(`Preview: ${d.effect}. Right now: ${d.would_run_now ? "it would run" : d.needs ? `it would wait for ${d.needs}` : `it would be denied (${d.firewall_code})`}.`); } catch (e) { setDry(String(e)); } }}>Preview (dry run)</Btn>
                 <a className="self-center text-xs text-indigo-600 underline" href="#/approvals">Open full card (edit bundle)</a>
               </div>
+              {dry && <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{dry}</p>}
             </Card>
           )}
         </div>

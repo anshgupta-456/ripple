@@ -41,7 +41,9 @@ export interface CaseView {
   messages: CaseMessage[]; steps: CaseStep[]; plan: PlannedAction[]; memo: Memo | null; report: Report | null;
   resolution: { state: string; reason: string } | null; pending: string[];
   bundle: { docs: string[]; dispute_id: string } | null;
-  ledger?: LedgerRow[]; decisions?: DecisionRow[]; outcomes?: OutcomeRow[]; followups?: FollowupRow[];
+  ledger?: LedgerRow[]; decisions?: DecisionRow[]; outcomes?: OutcomeRow[]; followups?: FollowupRow[]; voice?: VoiceRow[]; cascade?: Cascade | null;
+  extras?: { bridge?: { offered: boolean; reason?: string; kind?: string; amount?: number; fee?: number; value?: number }; udhaar?: { skip?: string; candidates?: { debtor_id: string; name: string; amount: number; label: string; score: number }[]; vetoes?: { name: string; reason: string; decision: string }[] } };
+  soundbox_online?: boolean | null; effectiveness?: Record<string, { n: number; mean_drop: number | null; failed: number }>;
 }
 export interface LedgerRow { id: string; counterparty: string | null; amount: number | null; due_text: string | null; due_at: string | null; confidence: number; confirmed: number; linked_node: string | null; funded_by: string | null; status: string }
 export interface DecisionRow { decision_id: string; graph_version: number; seed: number; chosen: string; tier_result: string; stability: number; p_miss: number; disposition: string; scores: { id: string; score: number; p_miss: number; tier: number }[] }
@@ -52,6 +54,16 @@ export interface PortfolioResult { illustrative: boolean; n: number; seed: numbe
   by_family: Record<string, { merchants: number; at_risk: number; escalate: number; traced_cause: string }> }
 export interface Sensitivity { note: string; cost: { n: number; E_cheaper_than_C_in: number; grid: Record<string, number[]> };
   harm: { scenario: string; runs: number; E: Record<string, number | null>; C: Record<string, number | null> }[] }
+export interface RuleRow { id: string; source: string; kind: string; status: string; condition: { action: string; max_amount: number; docs: string[] }; confirmed_by: string | null; uses: number; note: string; proposed_from: string }
+export interface RulesResult { rules: RuleRow[]; override: { n: number; approve: number; edit: number; reject: number; override_rate: number | null }; limits: { max_auto_amount: number; widening: { min_decisions: number; max_override_rate: number } }; can_decide: boolean }
+export interface DryRun { action_type: string; tier: number | null; would_run_now: boolean; firewall_code: string; reason: string; needs: string | null; effect: string }
+export interface WhyResult { language: string; text: string; facts: Record<string, unknown> }
+export interface CascadeNode { id: string; label: string; lag_days: number; p_propagate: number; amount: number; due_at: string; p_miss_do_nothing: number; p_miss_chosen: number }
+export interface Cascade { nodes: CascadeNode[]; assumption: string; expected_emi_penalty_do_nothing: number; expected_emi_penalty_chosen: number }
+export interface VoiceRow { id: number; sim_ts: string; kind: string; channel: string; reason: string; text: string }
+export interface WeekRow { week: number; cases: number; needed_a_person: number; escalation_rate: number; human_decisions: number; overrides: number; override_rate: number | null; approved_by_rule: number; rules_active: number; unsafe_actions: number; false_closures: number }
+export interface WeeksResult { with_rules: { weeks: WeekRow[]; note: string; analyst_model: Record<string, number> }; without_rules: { weeks: WeekRow[] } }
+export interface HoldoutResult { n_scenarios: number; system: string; all_met: boolean; note: string; targets: { target: string; rule: Record<string, number>; got: number | null; met: boolean }[]; comparison: Record<string, { verified: number | null; unsafe: number; false_resolved: number }> }
 export interface CaseSummary {
   sid: string; case_id: string; merchant: string; family: string; intent: string; language: string; status: string;
   closed: boolean; waiting_on: string | null; tier_max: number; hours_to_deadline: number | null; at_risk: boolean;
@@ -175,6 +187,13 @@ export const api = {
   audit: (sid?: string) => j<AuditEntry[]>(q("/api/audit", sid)),
   // benchmark + safety
   bench: () => j<BenchResults>("/api/bench/results"),
+  rules: () => j<RulesResult>("/api/rules"),
+  ruleDecide: (id: string, what: "confirm" | "reject" | "retire") => j<RuleRow>(`/api/rules/${encodeURIComponent(id)}/${what}`, {}),
+  dryRun: (hash: string, sid?: string) => j<DryRun>(q("/api/case/dry-run", sid), { action_hash: hash }),
+  why: (sid?: string) => j<WhyResult>(q("/api/case/why", sid)),
+  soundbox: (online: boolean, sid?: string) => j<{ soundbox_online: boolean }>(q("/api/case/soundbox", sid), { online }),
+  weeks: () => j<WeeksResult>("/api/bench/weeks"),
+  holdout: () => j<HoldoutResult>("/api/bench/holdout"),
   portfolio: () => j<PortfolioResult>("/api/portfolio"),
   sensitivity: () => j<Sensitivity>("/api/bench/sensitivity"),
   benchCsv: async () => {

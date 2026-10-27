@@ -19,6 +19,9 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 - Measured honestly: intake rules on 120 hand-labelled Hindi/English/Hinglish messages (intent 80%, 5 of 14 forbidden requests missed, none caused an unsafe action): [docs/INTAKE_EVAL.md](docs/INTAKE_EVAL.md). `python scripts/demo_check.py` rehearses every demo beat through the API.
 - What is built and what is left: [docs/STATUS.md](docs/STATUS.md). Still needs outside systems or other people: hosted IdP over https, Vault/AWS/live-model runs, held-out scenarios written by someone else, a backup demo video, an image scan.
 
+## Optional extensions (Full Feature Specification)
+Learned rules (analyst-confirmed), bridge offers and udhaar reminders (Tier 2, explicit tap, simulated lender and debtors), re-KYC link, dry run, promise repair date, voice delivery policy, cascade view, merchant "why", simulated-weeks and hand-written held-out runs. On in the app, off in the benchmark. See `docs/STATUS.md` for what is built, simulated or missing.
+
 ## Run
 ```
 # backend (RIPPLE_ENV=dev turns on demo mode: persona login, demo controls; the default is secure production mode)

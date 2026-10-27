@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AdversarialSummary, api, BenchResults, PublicConfig, Rate, Sensitivity, SysSummary } from "../api";
+import { AdversarialSummary, api, BenchResults, PublicConfig, Rate, Sensitivity, SysSummary, WeeksResult, HoldoutResult } from "../api";
 import { Btn, Card, ErrorNote, Mono, usePolling } from "../components/ui";
 
 type Slice = "all" | "tuning" | "held_out";
@@ -185,6 +185,10 @@ export default function Scoreboard() {
         </Card>
       </div>
 
+      <WeeksCard />
+
+      <HoldoutCard />
+
       <SensitivityCard />
 
       <Card title="Modeled assumptions (all in config/frozen.yaml)">
@@ -224,6 +228,45 @@ function SensitivityCard() {
           <tbody>{s.harm.map((h) => (<tr key={h.scenario} className="border-t border-slate-100 dark:border-slate-800"><td className="py-1 pr-3">{h.scenario}</td><td className="pr-3">{h.E.verified}</td><td className="pr-3">{h.E.unsafe}</td><td className="pr-3">{h.E.false_resolved}</td><td className="pr-3">{h.E.escalation_recall}</td><td className="pr-3">{h.C.verified}</td><td>{h.C.unsafe}</td></tr>))}</tbody></table>
         <p className="text-xs text-slate-500">Headline metrics did not move when the harm weights were scaled. That can mean the conclusions are robust, or that these scenarios do not exercise the weights; this check cannot tell the two apart. Synthetic results.</p>
       </div>)}
+    </Card>
+  );
+}
+
+
+function WeeksCard() {
+  const [w, setW] = useState<WeeksResult | null>(null);
+  useEffect(() => { api.weeks().then(setW).catch(() => {}); }, []);
+  if (!w) return null;
+  const a = w.with_rules.weeks, b = w.without_rules.weeks;
+  return (
+    <Card title="Escalation rate over simulated weeks (scripted analyst)">
+      <div className="space-y-1.5 text-xs">
+        {a.map((x, i) => (
+          <div key={x.week} className="grid grid-cols-[3.5rem_1fr_8rem] items-center gap-2">
+            <span>week {x.week}</span>
+            <div className="space-y-0.5">
+              <div className="h-2.5 rounded bg-indigo-500" style={{ width: `${x.escalation_rate * 100}%` }} title={`with rules ${(x.escalation_rate * 100).toFixed(0)}%`} />
+              <div className="h-2.5 rounded bg-slate-300 dark:bg-slate-600" style={{ width: `${b[i].escalation_rate * 100}%` }} title={`without rules ${(b[i].escalation_rate * 100).toFixed(0)}%`} />
+            </div>
+            <span className="text-slate-500">{(x.escalation_rate * 100).toFixed(0)}% vs {(b[i].escalation_rate * 100).toFixed(0)}% · {x.approved_by_rule} by rule</span>
+          </div>))}
+      </div>
+      <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">Blue: with learned rules. Grey: without. Unsafe actions: {a.reduce((n, x) => n + x.unsafe_actions, 0)}; cases closed without source proof: {a.reduce((n, x) => n + x.false_closures, 0)} (all weeks).
+        The override rate is noisy and not clearly falling: in the last weeks only a few humans decide, so one edit moves it a lot ({a.slice(-3).map((x) => x.override_rate === null ? "-" : `${(x.override_rate * 100).toFixed(0)}% of ${x.human_decisions}`).join(", ")}).</p>
+      <p className="mt-1 text-xs text-slate-500">{w.with_rules.note}</p>
+    </Card>
+  );
+}
+
+function HoldoutCard() {
+  const [h, setH] = useState<HoldoutResult | null>(null);
+  useEffect(() => { api.holdout().then(setH).catch(() => {}); }, []);
+  if (!h) return null;
+  return (
+    <Card title={`Hand-written held-out set (${h.n_scenarios} cases) against targets declared before the run`}>
+      <table className="w-full text-left text-xs"><thead className="uppercase text-slate-500"><tr><th className="pr-3">Target</th><th className="pr-3">Rule</th><th className="pr-3">Got</th><th>Met</th></tr></thead>
+        <tbody>{h.targets.map((t) => <tr key={t.target} className="border-t border-slate-100 dark:border-slate-800"><td className="py-1 pr-3">{t.target.replaceAll("_", " ")}</td><td className="pr-3">{Object.entries(t.rule).map(([k, v]) => `${k} ${v}`).join(", ")}</td><td className="pr-3">{t.got}</td><td className={t.met ? "text-emerald-600" : "font-semibold text-red-600"}>{t.met ? "yes" : "NO"}</td></tr>)}</tbody></table>
+      <p className="mt-2 text-xs text-slate-500">{h.note} Plain agent (C) on the same cases: verified {h.comparison.C.verified}, unsafe {h.comparison.C.unsafe}, false “resolved” {h.comparison.C.false_resolved}.</p>
     </Card>
   );
 }

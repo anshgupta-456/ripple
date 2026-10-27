@@ -1,5 +1,5 @@
 import { FormEvent, useRef, useState } from "react";
-import { CaseView } from "../api";
+import { api, CaseView } from "../api";
 import { StatusChip } from "./ui";
 import { canListen, canSpeak, listen, speak } from "./voice";
 
@@ -11,7 +11,9 @@ export default function ChatPanel({ c, inbound, onSend, onConsent, canSend = tru
   const [text, setText] = useState("");
   const [mic, setMic] = useState(false);
   const stopMic = useRef<() => void>(() => {});
-  const consent = c?.plan.find((p) => p.state === "awaiting_consent");
+  const consents = c?.plan.filter((p) => p.state === "awaiting_consent") ?? [];
+  const [why, setWhy] = useState("");
+  const askWhy = () => api.why(c?.sid).then((w) => setWhy(w.text)).catch((e) => setWhy(String(e)));
   const send = (t: string) => { if (t.trim()) { setText(""); onSend(t); } };
   const submit = (e: FormEvent) => { e.preventDefault(); send(text); };
   const toggleMic = () => {
@@ -34,14 +36,15 @@ export default function ChatPanel({ c, inbound, onSend, onConsent, canSend = tru
               {m.role === "agent" && canSpeak() && <button type="button" className="ml-2 align-middle text-xs text-indigo-600" aria-label="Read this reply aloud" title="Read aloud (browser voice)" onClick={() => speak(m.text, c?.language ?? "hinglish")}>🔊</button>}</p>
           </div>
         ))}
-        {consent && canSend && (
-          <div className="rounded-lg border border-sky-300 p-2 text-xs dark:border-sky-800">
-            <p className="mb-1 text-slate-500">Quick reply: consent to send exactly this note</p>
+        {canSend && consents.map((consent) => (
+          <div key={consent.action.hash} className="rounded-lg border border-sky-300 p-2 text-xs dark:border-sky-800">
+            <p className="mb-1 text-slate-500">{consent.action.type === "accept_bridge_offer" ? "Offer: nothing happens unless you tap Yes on this card" : consent.action.type === "send_debtor_reminder" ? "Consent to send exactly this note to your customer" : "Quick reply: consent to send exactly this note"}</p>
             <p className="mb-2 italic">“{consent.notice_text}”</p>
-            <button className="mr-2 rounded-md bg-sky-600 px-2.5 py-1 text-white" onClick={() => onConsent(consent.action.hash, true)}>Haan, bhejein</button>
+            <button className="mr-2 rounded-md bg-sky-600 px-2.5 py-1 text-white" onClick={() => onConsent(consent.action.hash, true)}>Haan</button>
             <button className="rounded-md border border-slate-300 px-2.5 py-1 dark:border-slate-700" onClick={() => onConsent(consent.action.hash, false)}>Nahi</button>
           </div>
-        )}
+        ))}
+        {why && <p className="rounded-lg border border-slate-200 p-2 text-xs dark:border-slate-700"><b>Why did you do that?</b> {why}</p>}
       </div>
       {!canSend && <p className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-slate-800">Read-only. Only the merchant (or an admin acting as the merchant, which is audited) can send messages.</p>}
       {canSend && <form className="flex gap-2 border-t border-slate-200 p-3 dark:border-slate-800" onSubmit={submit}>
@@ -51,6 +54,7 @@ export default function ChatPanel({ c, inbound, onSend, onConsent, canSend = tru
           className={`rounded-md border px-2 py-1.5 text-sm ${mic ? "border-red-400 bg-red-50 text-red-700" : "border-slate-300 dark:border-slate-700"}`}>{mic ? "Listening…" : "🎤"}</button>}
         <button className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">Send</button>
         <button type="button" className="rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700" title={inbound} onClick={() => send(inbound)}>Scenario message</button>
+        <button type="button" className="rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700" title="A plain-language reason, in the merchant's language" onClick={askWhy}>Why?</button>
       </form>}
       {canSend && <div className="flex flex-wrap gap-1 px-3 pb-3 text-xs">
         {QUICK.map((q) => (

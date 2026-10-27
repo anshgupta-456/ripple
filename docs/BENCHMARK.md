@@ -56,6 +56,10 @@ The v3 spec lists 14 scenario families; v1 had 12. Rows 6 and 14 were added, the
 5. **Promise-extraction eval** is 20 hand-labeled messages written by the same author; small and easy.
 6. **Modeled KPIs** (cost per case, human minutes saved, repeat contacts) use assumptions in the config and are not measurements.
 
+7. **Hand-written held-out set** (`app.bench.holdout`): 6 scenarios with targets committed in 60da3fa before the first run; all 7 targets were met. It is by the engine's author and tiny, so it checks against self-deception, not against bias.
+8. **Escalation over weeks** (`app.bench.weeks`): the analyst is scripted. Rules lower escalation (about 0.6 to 0.24 against 0.56 to 0.76 without); the override rate is noisy and not shown to fall.
+9. **Policy hash** now differs from the one recorded in frozen-v2 (new actions that the benchmark never uses); results were re-run and are identical.
+
 ## Reproduce
 ```
 cd backend

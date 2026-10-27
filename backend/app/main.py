@@ -753,6 +753,22 @@ def bench_sensitivity(user: User = Depends(require("bench.read"))) -> dict[str, 
     return json.loads(f.read_text(encoding="utf-8"))
 
 
+@app.get("/api/bench/weeks")
+def bench_weeks(user: User = Depends(require("bench.read"))) -> dict[str, Any]:
+    f = ROOT / "data" / "results" / "weeks_v1.json"
+    if not f.exists():
+        raise HTTPException(404, "no weeks simulation yet: python -m app.ext.weeks")
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+@app.get("/api/bench/holdout")
+def bench_holdout(user: User = Depends(require("bench.read"))) -> dict[str, Any]:
+    f = ROOT / "data" / "results" / "holdout_handwritten.json"
+    if not f.exists():
+        raise HTTPException(404, "no hand-written set results yet: python -m app.bench.holdout")
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
 @app.get("/api/bench/export.csv")
 def bench_export(user: User = Depends(require("bench.read"))):
     """Per-system metrics as CSV (v3: 'JSONL/CSV')."""
