@@ -5,7 +5,8 @@ authorization code flow with PKCE (S256) and holds the access token **in memory 
 validates every request's token itself.
 
 > Tested against a strict local mock IdP (`backend/tests/mock_idp.py`) with real HTTP, real RS256 signatures and real PKCE
-> verification, and in a real browser. **Not yet tested against a production IdP.** The provider notes below are guidance
+> verification, and in a real browser; and signed in through a real **Keycloak 26** in a real browser (see [DEPLOY.md](DEPLOY.md), plain http on
+> localhost only). **Not yet tested against a production IdP over https, or any hosted provider.** The provider notes below are guidance
 > from how those products are generally configured; verify each against the vendor's documentation.
 
 ## How it works
@@ -66,7 +67,7 @@ RIPPLE roles are `viewer`, `analyst`, `merchant`, `admin`. A token with no recog
 ## Provider notes (unverified against real tenants)
 | Provider | Things to know |
 |---|---|
-| Keycloak | add an *audience* mapper so `aud` contains your API id (default is `account`). Roles are at `realm_access.roles`: set `RIPPLE_OIDC_ROLES_CLAIM=realm_access.roles` |
+| Keycloak | **verified with Keycloak 26 (local, http)**: add an *audience* mapper so `aud` contains your API id (default is `account`). Roles are at `realm_access.roles`: set `RIPPLE_OIDC_ROLES_CLAIM=realm_access.roles` |
 | Auth0 | pass `RIPPLE_OIDC_AUTH_PARAMS=audience=<API identifier>`. Custom claims must be namespaced URLs: set the claim env vars to that exact URL |
 | Okta | use a custom authorization server so `aud` is your API; add a `groups` claim and map it with `RIPPLE_OIDC_ROLE_MAP` |
 | Microsoft Entra ID | register the redirect as **Single-page application**; use v2 tokens with an API scope; roles come from app roles in the `roles` claim |

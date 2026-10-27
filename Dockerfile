@@ -31,7 +31,7 @@ COPY --from=web /web/dist ./frontend/dist
 
 # Run as an unprivileged user. /var/ripple is the volume for audit logs, kill-switch state and the security log;
 # /app/data is scratch (generated ground truth and the model cache) and is not meant to persist.
-RUN useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin ripple \
+RUN useradd --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin ripple \
  && mkdir -p /var/ripple /app/data/ground_truth \
  && chown -R ripple:ripple /var/ripple /app/data
 USER ripple
@@ -39,6 +39,6 @@ ENV RIPPLE_DATA_DIR=/var/ripple PYTHONPATH=/app/backend
 # RIPPLE_ENV is deliberately not set: the default is production, which refuses every request until an identity provider is configured.
 VOLUME ["/var/ripple"]
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).status == 200 else 1)"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=8).status == 200 else 1)"]
 # Plain http inside the container; terminate TLS in front of it (the app sends HSTS in production).
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header"]

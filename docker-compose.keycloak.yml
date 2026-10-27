@@ -1,0 +1,26 @@
+# Local real-IdP check: a Keycloak dev instance with the realm in scripts/keycloak/ripple-realm.json (throwaway users, local test passwords).
+#   docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up --build
+# Then open http://localhost:8000 and use "Sign in with SSO" (users: priya = analyst, sam = admin, norole = no role).
+# RIPPLE runs with RIPPLE_ENV=dev here only because this Keycloak speaks plain http on localhost; production requires https.
+# `localhost` inside the RIPPLE container is mapped to the host so the issuer URL is identical for the browser and the API.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin-local-test
+      KC_HTTP_PORT: "8180"
+    ports:
+      - "127.0.0.1:8180:8180"
+    volumes:
+      - ./scripts/keycloak/ripple-realm.json:/opt/keycloak/data/import/ripple-realm.json:ro
+  ripple:
+    extra_hosts:
+      - "localhost:host-gateway"
+    environment:
+      RIPPLE_ENV: dev
+      RIPPLE_OIDC_ISSUER: http://localhost:8180/realms/ripple
+      RIPPLE_OIDC_AUDIENCE: ripple-api
+      RIPPLE_OIDC_CLIENT_ID: ripple-spa
+      RIPPLE_OIDC_ROLES_CLAIM: realm_access.roles

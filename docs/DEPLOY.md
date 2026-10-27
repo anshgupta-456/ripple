@@ -2,9 +2,12 @@
 
 One container serves the API and the built web app on the same origin. Nothing about this has been run on a real host yet.
 
-> **Status of the container files.** `Dockerfile`, `docker-compose.yml` and `docker-compose.demo.yml` were written and reviewed but
-> **never built**: the Docker daemon was not available where this was authored. Build once and fix whatever it finds before relying on them.
-> Serving the built app from the API (CSP, path safety, fallbacks) *is* tested without Docker: `backend/tests/test_web.py`.
+> **Status of the container files (2026-10-27).** The image builds (352 MB) and was run with compose in three modes: production (refuses
+> everything without an IdP, anonymous calls get 401, runs as uid 10001, HSTS and CSP present), demo (`scripts/demo_check.py` passes
+> against the container, audit files written to the volume as the unprivileged user) and with a real Keycloak (below). Building it
+> found one bug, a health-check timeout too tight under load, now fixed. **Not yet tested:** a read-only root filesystem, https
+> termination in front of it, image vulnerability scanning, Kubernetes. Serving the built app (CSP, path safety, fallbacks) is also
+> covered without Docker: `backend/tests/test_web.py`.
 
 ## Without Docker
 ```
@@ -22,6 +25,19 @@ docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build   # d
 Settings go in a `.env` next to the compose file (not committed): `RIPPLE_OIDC_ISSUER`, `RIPPLE_OIDC_AUDIENCE`, `RIPPLE_OIDC_CLIENT_ID`,
 role/tenant claim names, and the secret-store settings in [SECRETS.md](SECRETS.md). Secrets (audit key, model key) should come from
 Vault / AWS Secrets Manager, not from `.env`.
+
+## Real-IdP check with Keycloak
+```
+docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up --build     # then open http://localhost:8000
+```
+Starts Keycloak 26 (dev mode, port 8180) with the realm in `scripts/keycloak/ripple-realm.json`: a public client with PKCE S256, an audience
+mapper for `ripple-api`, a tenant claim, realm roles, and throwaway users (priya = analyst, sam = admin, norole = no role; local test passwords
+in that file). Verified in a real browser on 2026-10-27: discovery and endpoint validation against Keycloak, authorization code + PKCE sign-in,
+RS256 token accepted and mapped to the analyst role (`realm_access.roles`), code stripped from the URL, IdP logout ends the Keycloak session
+(the next SSO click shows the login form), a user with no role is refused with 403, and the API failed closed with 503 while Keycloak was still
+starting. **Limits:** plain http on localhost, so RIPPLE runs with `RIPPLE_ENV=dev` here (production requires https, which was not tested against
+Keycloak); silent renewal after token expiry and key rotation were not exercised against Keycloak (they are covered against the mock IdP); port 8080 was
+blocked on the test machine so Keycloak uses 8180.
 
 ## What the image does
 - Two stages: a Node build that type-checks and bundles the app, then a slim Python image with only the runtime dependencies from `pyproject.toml`.

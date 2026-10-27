@@ -35,17 +35,17 @@ Autonomy is a tie with the plain agent; the plain agent is cheaper in the modele
 
 ## What is left
 Cannot be done from this machine, needs you or outside systems:
-- Run against a real identity provider, a real Vault or AWS account, and a live model (needs credentials and endpoints).
+- Run against a hosted identity provider over https, a real Vault or AWS account, and a live model (needs credentials and endpoints).
 - Held-out scenarios written by someone other than the author (the benchmark is self-authored).
 - A backup screen recording of the demo.
-- Docker image build and compose check (the Docker daemon was not running when this was written).
 - Durable storage: cases live in memory and a restart wipes them; only meaningful once real source systems exist.
 
 ## Progress since this document was first written (2026-10-27)
 | Item | State |
 |---|---|
 | Single-origin serving: API serves the built app; strict CSP (token origin from validated discovery); HSTS in prod; traversal-safe paths; unknown `/api` is a JSON 404 | **Done and tested** (22 tests; mutation of the traversal guard is caught). SSO sign-in checked in a real browser under the CSP, no violations |
-| Dockerfile, compose, demo override, `docs/DEPLOY.md` | **Written, never built**: Docker daemon was not running. Treat as untested |
+| Dockerfile, compose, demo override, `docs/DEPLOY.md` | **Built and run** (352 MB): prod mode fails closed, demo rehearsal passes against the container, runs as uid 10001. Building found a health-check timeout bug, fixed. Not tested: read-only rootfs, https, image scan |
+| Real IdP | **Keycloak 26 verified in a real browser** (PKCE sign-in, role mapping, IdP logout, no-role refusal, fail-closed while IdP down), local plain http only. Compose file and realm: `docker-compose.keycloak.yml`, `scripts/keycloak/` |
 | Model-cache keys scoped by tenant | **Done and tested** (mutation caught) |
 | Idle-case TTL and case cap with least-recently-used eviction | **Done and tested** |
 | Audit chain-head external anchor (file or https sink; detects truncation and rewrite; dead sink counted, never blocks) | **Done and tested** (mutation caught); **off by default** until `RIPPLE_AUDIT_ANCHOR` is set to storage the app cannot rewrite |
@@ -55,8 +55,8 @@ Cannot be done from this machine, needs you or outside systems:
 | Pitch deck | **Done**: 8 slides with speaker notes in a private shared deck (link in the session); numbers come from the frozen benchmark and the intake evaluation |
 
 ### Still left
-- Build the container image and run compose once (needs Docker running).
-- Run sign-in against a real identity provider (Keycloak in Docker is the cheapest), secrets against a real Vault or AWS account, and the agent with a live model.
+- Sign-in against a hosted identity provider over https (Keycloak over http is done), silent renewal and key rotation against a real IdP, secrets against a real Vault or AWS account, and the agent with a live model.
+- Image scan, read-only root filesystem, https termination in front of the container.
 - Held-out scenarios written by someone other than the author; a live-model comparison for System C.
 - `frozen-v2`: fix the intake gaps listed in INTAKE_EVAL.md (Devanagari word boundaries, ETA rule order, a few patterns, stricter supplier flag), re-run the benchmark, evaluate on new messages.
 - Security-event log file is re-created empty at each start (the anchor is the only surviving evidence of an earlier run); persistence for cases and the security log.
