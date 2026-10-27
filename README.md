@@ -10,7 +10,8 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 - Phase 2 done: timeline normalizer, provenance graph (versioned), evidence-constrained reverse trace, seeded deadline-feasibility simulator, scorer with do-nothing, stability check, deterministic escalation triggers. `POST /api/session/analyze` runs it with no side effects.
 - Phase 3 done: action firewall (`config/policy.yaml`), hash-bound single-use approvals (analyst only), merchant consent, content guards, idempotent executor with timeout reconciliation, rule-based verifier, audit log, 44-case adversarial suite (zero unsafe, with a mutation check proving it can fail). API: `/api/actions/propose|execute`, `/api/approvals/issue`, `/api/consents/issue`, `/api/audit`, `/api/adversarial/run`.
 - Phase 4 done: intake (rules + optional cached LLM, Hindi/English/Hinglish), fact-bound replies in three languages, evidence bundle, analyst memo, orchestrator loop with multi-turn follow-ups, attack tripwire, case API (`/api/case/message|decide|consent`), chat + approval-card UI.
-- Next: Phase 5 (baselines A-D, more scenario families, seeded benchmark runner, metrics).
+- Phase 5 done: 12 scenario families, baselines A-D plus full RIPPLE (E), seeded runner, metrics with Wilson CIs, independent tool-layer policy auditor, config frozen at tag `frozen-v1`, scored results in `data/results/bench_frozen-v1.json`, scoreboard card in the UI. Protocol and **disclosures**: [docs/BENCHMARK.md](docs/BENCHMARK.md).
+- Next: Phase 6 (full dashboard: Ops Console, Case Workspace, Approvals, Scoreboard, Lab with System C vs RIPPLE split view and chaos panel).
 
 ## Run
 ```
@@ -33,3 +34,9 @@ Open the UI, press **Reset** (flagship: Rs 72,000 held, Rs 60,000 due Tuesday, K
 
 ## LLM usage
 The LLM is optional. `RIPPLE_LLM=auto|cache_only|off` (default auto), `RIPPLE_LLM_MODEL` (default claude-haiku-5-5), `ANTHROPIC_API_KEY` + `pip install anthropic` to enable live calls. Without them everything runs on deterministic rules. The LLM only extracts fields and rephrases replies; outputs are validated and it never decides, gates or executes. Responses are cached in `data/llm_cache.json`.
+
+## Benchmark
+```
+cd backend && python -m app.bench.run --label frozen-v1 --scored
+```
+720 runs (12 families x 12 seeds x 5 systems), about 20 s, deterministic, LLM off. System C is a scripted proxy, not a live model. The benchmark is self-authored and some dev results were inspected before the freeze; read the disclosures before quoting numbers.
