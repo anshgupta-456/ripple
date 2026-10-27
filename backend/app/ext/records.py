@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.ext.config import ext_config
 from app.ext.store import Store, get_store
 
 PROMISE_CONFIRM_MIN = 0.8        # a promise below this confidence is a candidate: the merchant confirms before it counts
@@ -76,7 +77,33 @@ class Records:
                 return True
         return False
 
+    def set_revised_date(self, iso: str | None) -> None:
+        for r in self.store.promises(self.tenant, self.case_id):
+            self.store.upsert_promise(self.tenant, self.case_id, {**r, "revised_due_at": iso})
+
+    # ---- voice channel delivery policy (feature 10): in-app text is always delivered; the Soundbox voice obeys quiet hours, a daily cap, and
+    # falls back to the app when the device is offline ----
+    def voice_deliver(self, world: Any, language: str, kind: str, text: str) -> dict[str, Any]:
+        cfg = ext_config()["contact"]
+        prof = world.ext.profile if getattr(world, "ext", None) else {"soundbox_online": False}
+        hour, day = world.now.hour, world.now.date().isoformat()
+        q0, q1 = cfg["quiet_hours"]
+        quiet = hour >= q0 or hour < q1
+        used = self.store.voice_count_day(self.tenant, world.spec.merchant_id, day)
+        if not prof.get("soundbox_online", False):
+            channel, delivered, why = "app", True, "Soundbox offline: the app carries the message"
+        elif quiet:
+            channel, delivered, why = "app", True, f"quiet hours ({q0}:00 to {q1:02d}:00): no voice announcement"
+        elif used >= cfg["daily_voice_cap"]:
+            channel, delivered, why = "app", True, f"daily voice cap of {cfg['daily_voice_cap']} reached"
+        else:
+            channel, delivered, why = "soundbox", True, "announced on the Soundbox"
+        self.store.add_voice(self.tenant, self.case_id, world.spec.merchant_id, world.now.isoformat(), language, kind, channel, delivered, why, text)
+        return {"channel": channel, "reason": why}
+
     # ---- read ----
     def view(self) -> dict[str, Any]:
+        eff = {t: self.store.effectiveness(self.tenant, t) for t in ("submit_dispute_evidence", "send_supplier_notice", "accept_bridge_offer", "send_debtor_reminder")}
         return {"ledger": self.store.promises(self.tenant, self.case_id), "decisions": self.store.decisions(self.tenant, self.case_id),
-                "outcomes": self.store.outcomes(self.tenant, self.case_id), "followups": self.store.followups(self.tenant, self.case_id)}
+                "outcomes": self.store.outcomes(self.tenant, self.case_id), "followups": self.store.followups(self.tenant, self.case_id),
+                "voice": self.store.voice(self.tenant, self.case_id), "effectiveness": {k: v for k, v in eff.items() if v["n"]}}

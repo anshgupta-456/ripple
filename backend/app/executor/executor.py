@@ -43,6 +43,26 @@ class Executor:
             raise PermissionError(d.reason)
         return self.w.call(tool)
 
+    EFFECTS = {
+        "submit_dispute_evidence": "would submit the evidence bundle to the dispute system; the settlement stays held until the risk team decides",
+        "send_supplier_notice": "would send the exact note to the supplier and record it in the supplier system",
+        "send_merchant_message": "would add this message to the merchant's notification log",
+        "send_kyc_reminder": "would send one KYC reminder the merchant opted in to",
+        "send_rekyc_link": "would put a re-KYC deep link in the merchant's app (no URL is sent in text)",
+        "schedule_follow_up": "would schedule an internal recheck; nothing is sent to anyone",
+        "accept_bridge_offer": "would disburse the offered amount to the merchant with the stated fee (mock); needs the merchant's consent",
+        "send_debtor_reminder": "would send a polite reminder to the debtor on the merchant's behalf; needs the merchant's consent",
+    }
+
+    def dry_run(self, action: Action, ctx: FirewallContext) -> dict[str, Any]:
+        """Show what WOULD happen, without calling any tool: the firewall's verdict as things stand now (so an action waiting for approval or
+        consent reports exactly that), plus what the tool would do. Logged in the audit trail as a dry run."""
+        d = self.fw._check(action, ctx, None, None)            # the same checks as execute(); no tool call and no state change
+        self.audit.add(self.w.now, "dry_run", case_id=action.case_id, action_hash=action.hash, outcome="would_allow" if d.allowed else "would_hold" if d.needs else "would_deny",
+                       code=d.code, action_type=action.type, tier=d.tier)
+        return {"action_type": action.type, "tier": d.tier, "would_run_now": d.allowed, "firewall_code": d.code, "reason": d.reason, "needs": d.needs,
+                "effect": self.EFFECTS.get(action.type, "no description")}
+
     def execute(self, action: Action, ctx: FirewallContext, approval=None, consent=None) -> ExecResult:
         d = self.fw.check(action, ctx, approval, consent)
         res = ExecResult(action_hash=action.hash, action_type=action.type, outcome="denied", firewall=d)

@@ -51,7 +51,8 @@ def test_analyze_endpoint_is_read_only():
     r = c.post("/api/session/analyze", json={}).json()
     assert r["chosen"]["id"] == "SUBMIT_DISPUTE_EVIDENCE+SEND_SUPPLIER_NOTICE"
     assert r["disposition"] == "needs_human_approval" and r["seed"] == 5120
-    assert c.get("/api/session/events").json() == []     # analysis takes no actions
+    history = {"transactions_summary", "soundbox_status", "emi_schedule", "support_contacts"}      # merchant signals that exist before anyone acts
+    assert [e for e in c.get("/api/session/events").json() if e["type"] not in history] == []     # analysis takes no actions
 
 
 def test_adversarial_endpoint_reports_zero_unsafe():

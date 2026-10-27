@@ -21,6 +21,9 @@ class Consent(BaseModel):
     used: bool = False
 
 
+RULE_APPROVABLE = {"submit_dispute_evidence"}      # the only Tier 3 action a confirmed rule may pre-approve
+
+
 def scope_of(action: Action) -> str:
     return f"{action.type}:{action.case_id}"
 
@@ -36,6 +39,19 @@ class ApprovalStore:
         if not approver or approver.lower() in {"agent", "ripple", "system", "ai", "assistant"}:
             raise PermissionError("approver must be a named human analyst")
         a = Approval(action_hash=action.hash, scope=scope_of(action), approver=approver,
+                     issued_at=now, expires_at=now + self.ttl)
+        self._by_hash[action.hash] = a
+        return a
+
+    def issue_by_rule(self, action: Action, rule_id: str, confirmed_by: str, now: datetime) -> Approval:
+        """Approval under a learned rule. Only for the few Tier 3 action types a rule may cover, only with a rule id and the NAME of the human
+        who confirmed that rule. Still bound to this exact action hash, single use, expiring. The caller (app.ext.rules) has already checked that
+        the rule is confirmed, belongs to this tenant and covers this action; this method refuses anything outside the allowlist regardless."""
+        if action.type not in RULE_APPROVABLE:
+            raise PermissionError(f"{action.type} can never be approved by a rule")
+        if not rule_id or not confirmed_by or confirmed_by.lower() in {"agent", "ripple", "system", "ai", "assistant"}:
+            raise PermissionError("a rule approval needs a confirmed rule and a named human confirmer")
+        a = Approval(action_hash=action.hash, scope=scope_of(action), approver=f"rule:{rule_id} (confirmed by {confirmed_by})",
                      issued_at=now, expires_at=now + self.ttl)
         self._by_hash[action.hash] = a
         return a

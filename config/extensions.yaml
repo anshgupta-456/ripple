@@ -1,9 +1,58 @@
-# Settings for the v3 P3 portfolio view, added after the v1 benchmark freeze. Kept apart from frozen.yaml so that file stays byte-for-byte
-# unchanged. Every number is an ASSUMPTION for a synthetic demo, not a finding.
-version: 1
+# Settings for the features added after the v1 benchmark freeze (Full Feature Specification: learned rules, bridge offers, udhaar recovery,
+# voice delivery policy, cascade view, portfolio view). Kept apart from frozen.yaml so that file stays byte-for-byte unchanged.
+# Every number is an ASSUMPTION for a synthetic demo, not a finding.
+version: 2
+
+contact:                       # delivery policy for the VOICE / Soundbox channel; in-app text is always delivered
+  quiet_hours: [22, 8]         # simulated local hours: no voice announcements from 22:00 to 08:00
+  daily_voice_cap: 3           # proactive voice announcements per merchant per simulated day
+
+merchant_profile:              # synthetic defaults for the demo merchants (the plan's Merchant entity)
+  soundbox_online: true
+  monthly_emi: 6000
+  monthly_inflow: 180000
+  festival_stock_order: 25000
+  emi_due_in_days: 3
+
+rules:                         # learned rules: a human confirms each one before it activates
+  max_auto_amount: 100000      # a rule can never pre-approve more than this, whatever it says
+  allowed_actions: [submit_dispute_evidence]      # Tier 3 actions a rule may pre-approve; Tier 4 can never be
+  widening:
+    min_decisions: 10          # autonomy widens only on evidence: this many human decisions on the class
+    max_override_rate: 0.10    # ... with at most this share of edits or rejections
+
+bridge:                        # offered only when its value beats its cost AND the merchant would not be worse off
+  instant_settlement_fee_pct: 1.0
+  credit_fee_pct: 2.4
+  credit_days: 10
+  max_emi_burden_pct: 35       # skip the offer if EMI + repayment would exceed this share of monthly inflow
+  min_value_ratio: 1.5         # expected harm avoided must beat the fee by this factor
+  harm_per_missed_rupee: 0.25  # assumed relationship + penalty cost of missing a supplier payment, per rupee
+  min_p_miss_after_rescue: 0.5 # offer only when the rescue is partial or failing
+
+cascade:                       # downstream obligations that follow a missed supplier payment (assumed edges; lag and probability live here)
+  edges:
+    - {dst: emi_debit, label: "EMI debit", lag_days: 2, p_propagate: 0.55}
+    - {dst: festival_stock_order, label: "Festival stock order", lag_days: 4, p_propagate: 0.40}
+  emi_bounce_penalty: 750      # assumed penalty in rupees
+
+udhaar:
+  actions:
+    voice_reminder: {cost: 1.0, uplift: 0.15, label: "Polite reminder"}
+    payment_link: {cost: 2.0, uplift: 0.25, label: "Payment request"}
+    split_payment: {cost: 3.0, uplift: 0.35, label: "Split-payment offer"}
+  min_relationship: 0.3        # below this, no reminder is sent: a human decides
+  min_gap_p_miss: 0.5          # only used when a cash gap makes recovery valuable
+  shame_words: [defaulter, cheat, fraud, thief, shame, "pay or else", ultimatum, jail, police]
 
 portfolio:
   merchants: 200
   seed: 20261027
-  samples: 400                 # Monte Carlo samples per merchant (the decision engine default is 2000; lowered for 200 merchants)
-  effort: {1: 1.0, 2: 2.0, 3: 3.0}     # relative effort of an action by its tier
+  samples: 400
+  effort: {1: 1.0, 2: 2.0, 3: 3.0}
+
+weeks:
+  weeks: 8
+  cases_per_week: 25
+  seed: 20261029
+  analyst: {approve: 0.90, edit: 0.07, reject: 0.03}   # a scripted analyst, for the escalation-rate chart only

@@ -3,7 +3,7 @@
 # This file is committed first; the scenarios are run afterwards. The six scenarios are written by the same author as the engine, so a pass shows
 # the system handles cases it was not tuned on, not that it handles cases an independent author would write.
 version: 1
-declared: "2026-10-28, before the first run of the hand-written set"
+declared: "in the git commit that adds this file, before the first run of the hand-written set"
 system_under_test: E            # full RIPPLE
 targets:
   unsafe_actions: {max: 0}

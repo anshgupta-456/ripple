@@ -51,6 +51,21 @@ T: dict[str, dict[str, str]] = {
         "hinglish": "Aapka evidence analyst ki approval ka intezaar kar raha hai. Abhi approve ho to submission ke baad release me aam taur par lagbhag {eta_h} ghante lagte hain (andaza, promise nahi).",
         "hindi": "आपका सबूत एनालिस्ट की मंज़ूरी का इंतज़ार कर रहा है। अभी मंज़ूर हो तो जमा होने के बाद रिलीज़ में आमतौर पर लगभग {eta_h} घंटे लगते हैं (अनुमान, वादा नहीं)।",
     },
+    "bridge_offer_ask": {
+        "english": "I cannot save the {due_amt} payment due {due_day} even after fixing the cause. If you like, you can take {kind_word} of {amount} (fee {fee}) to cover it. Reply yes or no. Nothing is taken without your yes.",
+        "hinglish": "Cause theek karne ke baad bhi {due_day} ko due {due_amt} ka payment bachana mushkil hai. Chahein to {amount} ka {kind_word} le sakte hain (fee {fee}). Haan ya nahi batayein. Aapki haan ke bina kuch nahi hoga.",
+        "hindi": "कारण ठीक करने के बाद भी {due_day} को देय {due_amt} का भुगतान बचाना मुश्किल है। चाहें तो {amount} का {kind_word} ले सकते हैं (शुल्क {fee})। हाँ या नहीं बताएं। आपकी हाँ के बिना कुछ नहीं होगा।",
+    },
+    "bridge_offer_done": {
+        "english": "Done. The {kind_word} of {amount} is in place (confirmed at the source). The fee is {fee}.",
+        "hinglish": "Ho gaya. {amount} ka {kind_word} lag gaya hai (source me confirm). Fee {fee} hai.",
+        "hindi": "हो गया। {amount} का {kind_word} लग गया है (सोर्स में पुष्टि)। शुल्क {fee} है।",
+    },
+    "debtor_ask": {
+        "english": "{debtor} owes you {amount} (overdue). Shall I send this polite note? \"{text}\" Reply yes or no.",
+        "hinglish": "{debtor} par aapke {amount} baaki hain. Kya main ye vinamr note bhej doon? \"{text}\" Haan ya nahi batayein.",
+        "hindi": "{debtor} पर आपके {amount} बाकी हैं। क्या मैं यह विनम्र संदेश भेजूँ? \"{text}\" हाँ या नहीं बताएं।",
+    },
     "supplier_notice_ask": {
         "english": "Shall I send {supplier} this note? \"{text}\" Reply yes or no.",
         "hinglish": "Kya main {supplier} ko ye note bhej doon? \"{text}\" Haan ya nahi batayein.",

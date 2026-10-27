@@ -19,6 +19,8 @@ from app.config import load_config
 from app.engine.decide import DecisionReport, Disposition, decide
 from app.engine.scorer import DO_NOTHING
 from app.executor.executor import ExecResult, Executor
+from app.ext.offers import cascade, plan_bridge, repair_date
+from app.ext.udhaar import message_for, plan_udhaar
 from app.firewall.firewall import Firewall, FirewallContext
 from app.firewall.stores import ApprovalStore, ConsentStore
 from app.graph.builder import GraphSnapshot
@@ -77,7 +79,10 @@ class CaseState(BaseModel):
 class Orchestrator:
     def __init__(self, world: World, executor: Executor, firewall: Firewall, approvals: ApprovalStore,
                  consents: ConsentStore, audit: AuditLog, case_id: str, seed: int, llm: LLM | None = None,
-                 trace_mode: str = "reverse", rec: Any = None):
+                 trace_mode: str = "reverse", rec: Any = None, rules: Any = None):
+        self.rules = rules      # optional app.ext.rules.Rules: learned rules, override rate; a confirmed rule can pre-approve narrow Tier 3 actions
+        self._edited: set[str] = set()
+        self.extra: dict[str, Any] = {}
         self.rec = rec          # optional app.ext.records.Records: SQLite decision records and the promise ledger; never read by the engine
         self.w, self.ex, self.fw = world, executor, firewall
         self.approvals, self.consents, self.audit = approvals, consents, audit
@@ -133,6 +138,8 @@ class Orchestrator:
         res = self.ex.execute(a, self._ctx())
         if res.outcome == "executed" and res.verified:
             self.s.messages.append(Message(role="agent", text=draft.text, ts=self._now(), kind=kind, gseq=next_seq()))
+            if self.rec:
+                self.rec.voice_deliver(self.w, self.s.language, kind, draft.text)
         else:
             self._step("Reply blocked or unverified", f"{kind}: {res.firewall.code} / {res.outcome}")
         return res
@@ -243,6 +250,12 @@ class Orchestrator:
                 extra = {"english": "Please renew it before it expires; this is separate from any settlement hold.",
                          "hinglish": "Expire hone se pehle renew kar lein; ye kisi settlement hold se alag baat hai.",
                          "hindi": "समाप्त होने से पहले नवीनीकरण करा लें; यह किसी सेटलमेंट होल्ड से अलग है।"}[self.s.language]
+        if "send_rekyc_link" in self.w.tools and k["status"] in ("expiring", "expired") and not any(p.action.type == "send_rekyc_link" for p in self.s.plan):
+            lk = self.ex.execute(Action(case_id=self.s.case_id, type="send_rekyc_link"), self._ctx())
+            self._step("Re-KYC link", f"{lk.outcome}, verified={lk.verified}")
+            if lk.verified:
+                extra += " " + {"english": "A re-KYC link is ready in your app.", "hinglish": "Re-KYC link aapke app mein ready hai.",
+                                "hindi": "री-केवाईसी लिंक आपके ऐप में तैयार है।"}[self.s.language]
         status_word = {"valid": "valid", "expiring": "expiring soon", "expired": "expired"}[k["status"]]
         res = self._say("kyc_status", kyc_status=status_word, kyc_exp=exp, kyc_extra=extra)
         # KYC is a separate risk: answering it must never close a case that still has a hold, an approval or a consent open.
@@ -292,7 +305,9 @@ class Orchestrator:
             and bool(report.chosen.steps)
         if only_unreachable:
             self._step("Deadline cannot be met", "recommending an honest supplier notice and fixing the cause; no promise made")
-            return self._propose_plan(intake, text, tl, report, list(report.chosen.steps))
+            st = self._propose_plan(intake, text, tl, report, list(report.chosen.steps))
+            self._extras_for_unsaveable(tl, report)
+            return st
         if report.disposition == Disposition.ESCALATE:
             s.memo = build_memo(intake, text, tl, report, compile_bundle(tl), [])
             return self._escalate("; ".join(report.triggers) or "engine escalation", text)
@@ -332,8 +347,17 @@ class Orchestrator:
         return s
 
     def _notice_text(self, tl: Timeline) -> str:
+        when = "by about a day"
+        if self.rec and self.s.report is not None:               # promise repair: a date the simulator supports, else a wider window
+            from datetime import datetime
+            due = tl.val("supplier.due_at")
+            due = datetime.fromisoformat(due) if isinstance(due, str) else due
+            rd = repair_date(self.s.report, self.w.now, due)
+            if rd["text"]:
+                when = rd["text"]
+                self.rec.set_revised_date(rd["date"].isoformat())
         return (f"Dear {tl.val('supplier.name')}, payment of {inr(tl.val('supplier.amount'))} from "
-                f"{self.w.spec.merchant_name} may be delayed by about a day due to a pending settlement review. "
+                f"{self.w.spec.merchant_name} may be delayed {when} due to a pending settlement review. "
                 f"Thank you for your patience.")
 
     def _plan_notice(self, tl: Timeline) -> PlannedAction | None:
@@ -381,6 +405,12 @@ class Orchestrator:
             self._say("supplier_notice_ask", supplier=tl.val("supplier.name"), text=notice.notice_text)
             if not any(p.state == "awaiting_approval" for p in s.plan):
                 self._set_status(CaseStatus.WAITING_MERCHANT)
+        if self.rules:
+            amt = self.w.spec.dispute.amount if self.w.spec.dispute else 0
+            for p in [q for q in s.plan if q.state == "awaiting_approval" and q.action.type == "submit_dispute_evidence"]:
+                r = self.rules.match(p.action.type, amt, list(p.action.params.get("docs", [])))
+                if r:
+                    self._auto_approve(p, r)
         return s
 
     # ------------------------------------------------------------------ human decisions
@@ -396,6 +426,8 @@ class Orchestrator:
             p.state = "rejected"
             self.audit.add(self.w.now, "approval", case_id=self.s.case_id, action_hash=p.action.hash, outcome="rejected",
                            approver=approver)
+            if self.rules:
+                self.rules.record(self.s.case_id, p.action.type, "reject", approver)
             self._step("Analyst rejected", p.label)
             self._say("approval_rejected")
             self._set_status(CaseStatus.ESCALATED)
@@ -409,6 +441,12 @@ class Orchestrator:
         self.audit.add(self.w.now, "approval", case_id=self.s.case_id, action_hash=p.action.hash, outcome="issued",
                        approver=approver, expires_at=ap.expires_at.isoformat())
         self._step("Analyst approved", f"{approver}: {p.label}")
+        if self.rules and p.action.hash not in self._edited:
+            self.rules.record(self.s.case_id, p.action.type, "approve", approver)
+            amt = self.w.spec.dispute.amount if self.w.spec.dispute else 0
+            rid = self.rules.maybe_widen(self.s.case_id, p.action.type, amt, list(p.action.params.get("docs", [])))
+            if rid:
+                self._step("Rule proposed from evidence", f"{rid}: waiting for an analyst to confirm it; nothing changes until then")
         return self._run(p)
 
     def edit_plan_action(self, action_hash: str, docs: list[str]) -> CaseState:
@@ -426,6 +464,13 @@ class Orchestrator:
         self.audit.add(self.w.now, "approval", case_id=self.s.case_id, action_hash=new.hash, outcome="edited",
                        old_hash=old, docs=list(docs))
         self._step("Analyst edited the evidence bundle", f"{len(docs)} document(s); action hash changed, fresh approval needed")
+        self._edited.add(new.hash)
+        if self.rules:
+            self.rules.record(self.s.case_id, p.action.type, "edit", "analyst")
+            amt = self.w.spec.dispute.amount if self.w.spec.dispute else 0
+            rid = self.rules.propose_from_edit(self.s.case_id, p.action.type, amt, list(docs))
+            if rid:
+                self._step("Rule proposed from your edit", f"{rid}: it only activates when an analyst confirms it")
         if self.s.memo:
             for a in self.s.memo.proposed_actions:
                 if a.get("hash") == old:
@@ -439,7 +484,10 @@ class Orchestrator:
         if not accept:
             p.state = "rejected"
             self.audit.add(self.w.now, "consent", case_id=self.s.case_id, action_hash=p.action.hash, outcome="declined")
-            self._say("supplier_notice_declined", supplier=self._tl.val("supplier.name") if self._tl else "supplier")
+            if p.action.type == "send_supplier_notice":
+                self._say("supplier_notice_declined", supplier=self._tl.val("supplier.name") if self._tl else "supplier")
+            else:
+                self._step("Merchant declined", p.label)
             self._after_plan_change()
             return self.s
         self.consents.issue(p.action, self.w.spec.merchant_id, self.w.now)
@@ -449,10 +497,15 @@ class Orchestrator:
 
     def _chat_consent(self, yes: bool) -> CaseState:
         pend = [p for p in self.s.plan if p.state == "awaiting_consent"]
-        if not pend:
+        # A chat "yes" is only ever for the supplier note. A financial offer or a message to a debtor needs the explicit tap on its own card,
+        # and if several things are waiting a bare "yes" is ambiguous, so nothing happens.
+        notes = [p for p in pend if p.action.type == "send_supplier_notice"]
+        if len(pend) != len(notes) or len(notes) != 1:
+            if pend:
+                self._step("Chat reply not applied", "several or financial items wait for consent: use the Yes / No button on the exact item")
             self._say("nothing_pending")
             return self.s
-        return self.merchant_consent(pend[-1].action.hash, yes)
+        return self.merchant_consent(notes[0].action.hash, yes)
 
     def _run(self, p: PlannedAction) -> CaseState:
         r = self.ex.execute(p.action, self._ctx())
@@ -469,17 +522,85 @@ class Orchestrator:
                 self._say("supplier_notice_sent", supplier=self._tl.val("supplier.name") if self._tl else "supplier")
                 if self.rec:
                     self.rec.set_promise_status("repaired")
+            elif p.action.type == "accept_bridge_offer":
+                o = (self.w.ext.offers[-1] if self.w.ext else {})
+                self._say("bridge_offer_done", amount=inr(o.get("amount", 0)), fee=inr(o.get("fee", 0)), kind_word=self._kind_word(o.get("kind", "")))
+            elif p.action.type == "send_debtor_reminder":
+                self._step("Reminder sent to debtor", p.label)
             elif p.action.type == "submit_dispute_evidence":
                 self._eta_reply(waiting=True)
                 self._schedule_recheck()
         else:
             p.state, p.note = "failed", (r.verification.reason if r.verification else r.outcome)
+            self._next_best(p)
             self._say("action_failed")
             self._set_status(CaseStatus.ESCALATED)
         if self.rec and r.outcome != "denied" and r.verification:
             self.rec.outcome(p.action.type, r.verification.state.value, self.s.report)
         self._after_plan_change()
         return self.s
+
+    # ------------------------------------------------------------------ Full Feature Spec extras
+    @staticmethod
+    def _kind_word(kind: str) -> str:
+        return {"short_term_credit": "short-term cover", "instant_settlement": "instant settlement"}.get(kind, "cover")
+
+    def _extras_for_unsaveable(self, tl: Timeline, report: DecisionReport) -> None:
+        """Only when the main rescue cannot save the deadline: consider a bridge offer and udhaar recovery. Both are Tier 2 (merchant consent)."""
+        if not self.w.ext:
+            return
+        s, prof = self.s, self.w.ext.profile
+        offer = plan_bridge(report, tl.val("supplier.amount"), tl.val("settlement.status"), prof)
+        if "offer" in offer:
+            o = offer["offer"]
+            a = Action(case_id=s.case_id, type="accept_bridge_offer", params={"kind": o["kind"], "amount": o["amount"]})
+            terms = f"{self._kind_word(o['kind'])} of {inr(o['amount'])}, fee {inr(o['fee'])}" + (f", repay within {o['repay_days']} days" if o["repay_days"] else "")
+            if not any(p.action.hash == a.hash for p in s.plan):
+                s.plan.append(PlannedAction(action=a, label=f"Bridge offer: {terms}", tier=2, state="awaiting_consent", notice_text=terms))
+                self._step("Bridge offer prepared", f"{terms}; value Rs {o['value']:,} beats the fee; waiting for the merchant's explicit tap")
+                self._say("bridge_offer_ask", due_amt=inr(tl.val("supplier.amount")), due_day=fmt_dt(tl.val("supplier.due_at")), amount=inr(o["amount"]), fee=inr(o["fee"]),
+                          kind_word=self._kind_word(o["kind"]))
+            self.extra["bridge"] = {"offered": True, **o}
+        else:
+            self.extra["bridge"] = {"offered": False, "reason": offer["skip"]}
+            self._step("No bridge offer", offer["skip"])
+        ud = plan_udhaar(self.w.ext.receivables, report.chosen.p_miss, self.w.spec.merchant_name, s.language)
+        self.extra["udhaar"] = ud
+        if ud.get("vetoes"):
+            for v in ud["vetoes"]:
+                self._step("Udhaar: human decides", f"{v['name']}: {v['reason']}")
+        if ud.get("candidates"):
+            c = ud["candidates"][0]
+            text = message_for(c["action"], self.w.spec.merchant_name, c["amount"], s.language)
+            a2 = Action(case_id=s.case_id, type="send_debtor_reminder", params={"debtor_id": c["debtor_id"], "text": text})
+            if not any(p.action.hash == a2.hash for p in s.plan):
+                s.plan.append(PlannedAction(action=a2, label=f"{c['label']} to {c['name']}", tier=2, state="awaiting_consent", notice_text=text))
+                self._step("Udhaar recovery prepared", f"{c['label']} to {c['name']} (Rs {c['amount']:,} overdue): a cash gap makes it worth asking")
+                self._say("debtor_ask", debtor=c["name"], amount=inr(c["amount"]), text=text)
+
+    def _next_best(self, failed: PlannedAction) -> None:
+        """A failed action never closes anything. Name the next-best permitted option for the human who takes over; do not run it unattended."""
+        rep = self.s.report
+        if rep is None:
+            return
+        alt = next((r for r in rep.ranked if r.permitted and r.feasible and r.id != DO_NOTHING and failed.action.type not in r.steps), None)
+        self._step("Next-best action for the human", f"{alt.label if alt else 'none permitted'}; the failed attempt is recorded and the case is escalated")
+
+    def dry_run(self, action_hash: str) -> dict[str, Any]:
+        p = next((q for q in self.s.plan if q.action.hash == action_hash), None)
+        if p is None:
+            raise KeyError(action_hash)
+        return self.ex.dry_run(p.action, self._ctx())
+
+    def _auto_approve(self, p: PlannedAction, rule: dict[str, Any]) -> None:
+        """A confirmed rule pre-approves this one action. Audited with the rule id and the analyst who confirmed it; still hash-bound and single use."""
+        ap = self.approvals.issue_by_rule(p.action, rule["id"], rule["confirmed_by"], self.w.now)
+        self.audit.add(self.w.now, "approval", case_id=self.s.case_id, action_hash=p.action.hash, outcome="issued",
+                       approver=ap.approver, basis="confirmed_rule", rule_id=rule["id"], expires_at=ap.expires_at.isoformat())
+        self._step("Approved under a confirmed rule", f"{rule['id']} (confirmed by {rule['confirmed_by']}): {p.label}")
+        self.rules.record(self.s.case_id, p.action.type, "approve", "", rule_id=rule["id"])
+        self.rules.store.bump_rule(self.rules.tenant, rule["id"])
+        self._run(p)
 
     def _schedule_recheck(self) -> None:
         """v3 Tier 1: schedule an internal recheck. Only in worlds that have the tool (extensions on); it goes through the same firewall."""
@@ -561,5 +682,6 @@ class Orchestrator:
     def view(self) -> dict[str, Any]:
         s = self.s
         pending = [p for p in s.plan if p.state in ("awaiting_approval", "awaiting_consent")]
-        extra = self.rec.view() if self.rec else {}
+        extra = (self.rec.view() | {"cascade": cascade(s.report, self.w.ext.profile, self.w.now) if (s.report and self.w.ext) else None,
+                                    "extras": self.extra, "soundbox_online": self.w.ext.profile["soundbox_online"] if self.w.ext else None}) if self.rec else {}
         return s.model_dump(mode="json") | {"pending": [p.action.hash for p in pending]} | extra

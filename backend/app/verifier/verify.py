@@ -55,13 +55,24 @@ def verify_action(action: Action, pre: dict[str, Any], read: Callable[[str], Any
         ok = k["reminders_sent"] > pre.get("kyc", {}).get("reminders_sent", 0)
         return Verification(state=V.VERIFIED if ok else V.FAILED,
                             reason="reminder recorded" if ok else "no new reminder at source", source_snapshot=k)
-    if t == "schedule_follow_up":
+    if t in ("send_rekyc_link", "schedule_follow_up", "accept_bridge_offer", "send_debtor_reminder"):
         e, err = _safe(read, "read_ext_state")
         if err:
             return Verification(state=V.UNKNOWN, reason=err)
-        ok = len(e["followups"]) > len((pre.get("ext") or {}).get("followups", []))
-        return Verification(state=V.VERIFIED if ok else V.FAILED, reason="follow-up scheduled at source" if ok else "no new follow-up at source",
-                            source_snapshot=e)
+        before = pre.get("ext") or {}
+        if t == "send_rekyc_link":
+            ok, why = len(e["rekyc_links"]) > len(before.get("rekyc_links", [])), "re-KYC link recorded at source"
+        elif t == "schedule_follow_up":
+            ok, why = len(e["followups"]) > len(before.get("followups", [])), "follow-up scheduled at source"
+        elif t == "accept_bridge_offer":
+            ok = len(e["offers"]) > len(before.get("offers", [])) and e["offers"][-1]["status"] == "accepted"
+            why = "offer accepted and disbursed at source"
+        else:
+            did = action.params.get("debtor_id")
+            was = next((r["reminders"] for r in before.get("receivables", []) if r["debtor_id"] == did), 0)
+            now = next((r["reminders"] for r in e["receivables"] if r["debtor_id"] == did), 0)
+            ok, why = now > was, "reminder recorded for the debtor"
+        return Verification(state=V.VERIFIED if ok else V.FAILED, reason=why if ok else f"not confirmed at source ({t})", source_snapshot=e)
     return Verification(state=V.UNKNOWN, reason=f"no verifier for {t}")
 
 

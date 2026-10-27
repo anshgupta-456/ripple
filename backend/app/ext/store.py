@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS outcomes(id INTEGER PRIMARY KEY AUTOINCREMENT, tenant
 CREATE TABLE IF NOT EXISTS promises(id TEXT PRIMARY KEY, tenant TEXT NOT NULL, case_id TEXT NOT NULL, counterparty TEXT, amount INTEGER, due_text TEXT,
   due_at TEXT, revised_due_at TEXT, confidence REAL, confirmed INTEGER NOT NULL DEFAULT 0, linked_node TEXT, funded_by TEXT, status TEXT, updated REAL);
 CREATE TABLE IF NOT EXISTS followups(id TEXT PRIMARY KEY, tenant TEXT NOT NULL, case_id TEXT NOT NULL, due_at TEXT, reason TEXT, status TEXT);
+CREATE TABLE IF NOT EXISTS rules(id TEXT PRIMARY KEY, tenant TEXT NOT NULL, created REAL NOT NULL, source TEXT NOT NULL, kind TEXT NOT NULL,
+  condition TEXT NOT NULL, status TEXT NOT NULL, proposed_from TEXT, confirmed_by TEXT, confirmed_at REAL, uses INTEGER NOT NULL DEFAULT 0, note TEXT);
+CREATE TABLE IF NOT EXISTS human_decisions(id INTEGER PRIMARY KEY AUTOINCREMENT, tenant TEXT NOT NULL, ts REAL NOT NULL, case_id TEXT NOT NULL,
+  action_type TEXT NOT NULL, decision TEXT NOT NULL, approver TEXT, rule_id TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS voice_log(id INTEGER PRIMARY KEY AUTOINCREMENT, tenant TEXT NOT NULL, ts REAL NOT NULL, sim_ts TEXT, case_id TEXT NOT NULL,
+  merchant_id TEXT, language TEXT, kind TEXT, channel TEXT, delivered INTEGER, reason TEXT, text TEXT);
+CREATE INDEX IF NOT EXISTS ix_rules_t ON rules(tenant, status);
+CREATE INDEX IF NOT EXISTS ix_hd_t ON human_decisions(tenant, action_type);
+CREATE INDEX IF NOT EXISTS ix_voice_c ON voice_log(tenant, case_id);
 CREATE INDEX IF NOT EXISTS ix_dec_c ON decisions(tenant, case_id);
 CREATE INDEX IF NOT EXISTS ix_prom_c ON promises(tenant, case_id);
 """
@@ -94,6 +103,63 @@ class Store:
     def outcomes(self, tenant: str, case_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self._run("SELECT * FROM outcomes WHERE tenant=? AND case_id=? ORDER BY ts", (tenant, case_id))]
 
+    # ------------------------------------------------------------------ learned rules and human decisions
+    def add_rule(self, tenant: str, source: str, kind: str, condition: dict[str, Any], proposed_from: str = "", note: str = "") -> str:
+        rid = new_id("R")
+        self._run("INSERT INTO rules(id,tenant,created,source,kind,condition,status,proposed_from,note) VALUES(?,?,?,?,?,?,?,?,?)",
+                  (rid, tenant, time.time(), source, kind, json.dumps(condition, sort_keys=True), "proposed", proposed_from, note))
+        return rid
+
+    def rule(self, tenant: str, rid: str) -> dict[str, Any] | None:
+        r = self._run("SELECT * FROM rules WHERE tenant=? AND id=?", (tenant, rid))
+        return _rule(r[0]) if r else None
+
+    def rules(self, tenant: str, status: str | None = None) -> list[dict[str, Any]]:
+        if status:
+            rows = self._run("SELECT * FROM rules WHERE tenant=? AND status=? ORDER BY created DESC", (tenant, status))
+        else:
+            rows = self._run("SELECT * FROM rules WHERE tenant=? ORDER BY created DESC", (tenant,))
+        return [_rule(r) for r in rows]
+
+    def set_rule_status(self, tenant: str, rid: str, status: str, by: str = "") -> bool:
+        if not self._run("SELECT 1 FROM rules WHERE tenant=? AND id=?", (tenant, rid)):
+            return False
+        self._run("UPDATE rules SET status=?, confirmed_by=?, confirmed_at=? WHERE tenant=? AND id=?", (status, by, time.time(), tenant, rid))
+        return True
+
+    def bump_rule(self, tenant: str, rid: str) -> None:
+        self._run("UPDATE rules SET uses=uses+1 WHERE tenant=? AND id=?", (tenant, rid))
+
+    def add_human_decision(self, tenant: str, case_id: str, action_type: str, decision: str, approver: str = "", rule_id: str = "") -> None:
+        self._run("INSERT INTO human_decisions(tenant,ts,case_id,action_type,decision,approver,rule_id) VALUES(?,?,?,?,?,?,?)",
+                  (tenant, time.time(), case_id, action_type, decision, approver, rule_id))
+
+    def decision_counts(self, tenant: str, action_type: str) -> dict[str, int]:
+        """Counts of HUMAN decisions only (decisions made under a rule are not evidence about people)."""
+        rows = self._run("SELECT decision, COUNT(*) n FROM human_decisions WHERE tenant=? AND action_type=? AND rule_id='' GROUP BY decision", (tenant, action_type))
+        return {r["decision"]: r["n"] for r in rows}
+
+    def effectiveness(self, tenant: str, action_type: str) -> dict[str, Any]:
+        """Measured effect of an action: how far the re-simulated miss probability fell after it ran."""
+        rows = self._run("SELECT risk_before, risk_after, verdict FROM outcomes WHERE tenant=? AND action_type=? AND risk_before IS NOT NULL AND risk_after IS NOT NULL",
+                         (tenant, action_type))
+        drops = [r["risk_before"] - r["risk_after"] for r in rows]
+        return {"n": len(drops), "mean_drop": round(sum(drops) / len(drops), 4) if drops else None, "min_drop": round(min(drops), 4) if drops else None,
+                "max_drop": round(max(drops), 4) if drops else None, "failed": sum(1 for r in rows if r["verdict"] == "failed")}
+
+    # ------------------------------------------------------------------ voice delivery log
+    def add_voice(self, tenant: str, case_id: str, merchant_id: str, sim_ts: str, language: str, kind: str, channel: str, delivered: bool, reason: str, text: str) -> None:
+        self._run("INSERT INTO voice_log(tenant,ts,sim_ts,case_id,merchant_id,language,kind,channel,delivered,reason,text) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                  (tenant, time.time(), sim_ts, case_id, merchant_id, language, kind, channel, int(delivered), reason, redact_text(text)))
+
+    def voice(self, tenant: str, case_id: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._run("SELECT * FROM voice_log WHERE tenant=? AND case_id=? ORDER BY id", (tenant, case_id))]
+
+    def voice_count_day(self, tenant: str, merchant_id: str, sim_day: str) -> int:
+        r = self._run("SELECT COUNT(*) n FROM voice_log WHERE tenant=? AND merchant_id=? AND substr(sim_ts,1,10)=? AND delivered=1 AND channel='soundbox'",
+                      (tenant, merchant_id, sim_day))
+        return int(r[0]["n"])
+
     # ------------------------------------------------------------------ promise ledger
     def upsert_promise(self, tenant: str, case_id: str, p: dict[str, Any]) -> None:
         row = {"revised_due_at": None, "linked_node": None, "funded_by": None, "due_at": None, "due_text": None, "amount": None,
@@ -126,14 +192,20 @@ class Store:
     def purge_older_than(self, days: int) -> int:
         cutoff = time.time() - days * 86400
         n = 0
-        for t in ("decisions", "memos", "outcomes"):
+        for t in ("decisions", "memos", "outcomes", "human_decisions", "voice_log"):
             n += len(self._run(f"DELETE FROM {t} WHERE ts < ? RETURNING 1", (cutoff,)))      # table names are the fixed list above
         n += len(self._run("DELETE FROM promises WHERE updated < ? RETURNING 1", (cutoff,)))
         return n
 
     def delete_case(self, tenant: str, case_id: str) -> None:
-        for t in ("decisions", "memos", "outcomes", "promises", "followups"):
+        for t in ("decisions", "memos", "outcomes", "promises", "followups", "human_decisions", "voice_log"):
             self._run(f"DELETE FROM {t} WHERE tenant=? AND case_id=?", (tenant, case_id))        # fixed table list, bound values
+
+
+def _rule(r: sqlite3.Row) -> dict[str, Any]:
+    d = dict(r)
+    d["condition"] = json.loads(d["condition"])
+    return d
 
 
 _STORE: Store | None = None

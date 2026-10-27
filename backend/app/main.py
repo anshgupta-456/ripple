@@ -24,8 +24,10 @@ from app.bench.audit_policy import audit_calls
 from app.bench.lab import ATTACK_TEXTS, PRESETS, run_lab
 from app.bench.templates import CANONICAL_SEED, REGISTRY, InboundMessage, Scenario, generate, write_ground_truth
 from app.config import ROOT, load_config
+from app.ext.config import ext_config
 from app.ext.portfolio import cached as portfolio_cached
 from app.ext.records import Records
+from app.ext.rules import RuleError, Rules
 from app.ext.sources import attach_ext_sources
 from app.ext.store import get_store
 from app.executor.executor import Executor
@@ -83,11 +85,13 @@ class Session:
         self.firewall = Firewall(self.approvals, self.consents, self.audit)
         self.executor = Executor(self.world, self.firewall, self.audit, self.approvals, self.consents)
         self.rec = None
+        self.rules = None
         if os.environ.get("RIPPLE_EXTENSIONS", "on").lower() != "off":      # v3 records, promise ledger, internal recheck
             attach_ext_sources(self.world)
             self.rec = Records(tenant, self.case_id)
+            self.rules = Rules(tenant)
         self.agent = Orchestrator(self.world, self.executor, self.firewall, self.approvals, self.consents, self.audit,
-                                  self.case_id, scenario.seed, LLM(tenant=tenant), rec=self.rec)
+                                  self.case_id, scenario.seed, LLM(tenant=tenant), rec=self.rec, rules=self.rules)
 
     @property
     def merchant_id(self) -> str:
@@ -660,6 +664,79 @@ def bench_results(user: User = Depends(require("bench.read"))) -> dict[str, Any]
             data.pop("records", None)
             return data
     raise HTTPException(404, "no benchmark results yet: python -m app.bench.run --label dev")
+
+
+# ------------------------------------------------------------------ learned rules (analysts confirm; nothing activates itself)
+class DryRunBody(BaseModel):
+    action_hash: str
+
+
+class SoundboxBody(BaseModel):
+    online: bool
+
+
+@app.get("/api/rules")
+def rules_list(user: User = Depends(require("approval.read"))) -> dict[str, Any]:
+    r = Rules(user.tenant)
+    return {"rules": r.store.rules(user.tenant), "override": r.override_stats("submit_dispute_evidence"),
+            "limits": {"max_auto_amount": ext_config()["rules"]["max_auto_amount"], "widening": ext_config()["rules"]["widening"]},
+            "can_decide": user.can("approval.decide")}
+
+
+def _rule_decision(user: User, rid: str, fn: str) -> dict[str, Any]:
+    r = Rules(user.tenant)
+    try:
+        out = getattr(r, fn)(rid, user.name)
+    except KeyError:
+        raise HTTPException(404, "no such rule")
+    except RuleError as e:
+        raise HTTPException(409, str(e))
+    security_event(f"rule_{fn}", user, outcome="ok", rule=rid)
+    return out
+
+
+@app.post("/api/rules/{rid}/confirm")
+def rule_confirm(rid: str, user: User = Depends(require("approval.decide", limit=("decide", 30, 60)))) -> dict[str, Any]:
+    """Only an analyst can activate a rule. The name on the rule is the token's subject, never a request field."""
+    return _rule_decision(user, rid, "confirm")
+
+
+@app.post("/api/rules/{rid}/reject")
+def rule_reject(rid: str, user: User = Depends(require("approval.decide", limit=("decide", 30, 60)))) -> dict[str, Any]:
+    return _rule_decision(user, rid, "reject")
+
+
+@app.post("/api/rules/{rid}/retire")
+def rule_retire(rid: str, user: User = Depends(require("approval.decide", limit=("decide", 30, 60)))) -> dict[str, Any]:
+    return _rule_decision(user, rid, "deactivate")
+
+
+@app.post("/api/case/dry-run")
+def case_dry_run(body: DryRunBody, ctx: tuple[User, Session] = Depends(case_dep("case.read", limit=("message", 60, 60)))) -> dict[str, Any]:
+    """What WOULD happen if this planned action ran now. Calls no tool and changes nothing."""
+    try:
+        return ctx[1].agent.dry_run(body.action_hash)
+    except KeyError:
+        raise HTTPException(404, "no such planned action")
+
+
+@app.get("/api/case/why")
+def case_why(ctx: tuple[User, Session] = Depends(case_dep("case.read"))) -> dict[str, Any]:
+    """The merchant's plain-language answer to 'why did you do that?', in their language, from the decision record."""
+    from app.agent.reply import fmt_dt
+    from app.ext.explain import why_merchant
+    s = ctx[1]
+    due = s.world.call("read_supplier_obligation") if "read_supplier_obligation" in s.world.tools else None
+    return why_merchant(s.agent.s.language, s.agent.s.report, s.agent.s.plan, fmt_dt(due["due_at"]) if due and due.get("due_at") else None)
+
+
+@app.post("/api/case/soundbox")
+def case_soundbox(body: SoundboxBody, ctx: tuple[User, Session] = Depends(case_dep("demo.control"))) -> dict[str, Any]:
+    """Demo control: take the merchant's Soundbox offline or online; voice then falls back to the app."""
+    if ctx[1].world.ext is None:
+        raise HTTPException(409, "extensions are off")
+    ctx[1].world.ext.set_soundbox(body.online)
+    return {"soundbox_online": body.online}
 
 
 @app.get("/api/portfolio")

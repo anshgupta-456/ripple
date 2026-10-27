@@ -10,7 +10,7 @@ reads:   # read-only tools, tier 1, no parameters
   - read_supplier_obligation
   - read_refund
   - read_notifications
-  - read_ext_state          # internal follow-ups (extensions only)
+  - read_ext_state          # merchant profile, re-KYC links, follow-ups, bridge offers, receivables (extensions only)
 
 actions:
   submit_dispute_evidence:
@@ -42,6 +42,23 @@ actions:
     params:
       hours: {type: int_range, min: 1, max: 72}
       reason: {type: enum, values: [check_dispute, check_kyc, check_settlement]}
+
+  send_rekyc_link:              # Full Feature Spec feature 7: a re-KYC deep link lives in the app; no URL is ever passed through text
+    tier: 1
+    max_per_case: 1
+    params: {}
+  accept_bridge_offer:          # a financial product: only with the merchant's consent, with bounded amount (feature 13)
+    tier: 2
+    max_per_case: 1
+    params:
+      kind: {type: enum, values: [instant_settlement, short_term_credit]}
+      amount: {type: int_range, min: 1000, max: 200000}
+  send_debtor_reminder:         # a message to a third party about money owed to the merchant (feature 19)
+    tier: 2
+    max_per_case: 3
+    params:
+      debtor_id: {type: id}
+      text: {type: text, max_len: 500}
 
 # Named so denials are explicit and audited. None of these has an executable tool.
 forbidden:
