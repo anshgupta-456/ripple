@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import numpy as np
 from pydantic import BaseModel
 
 from app.engine.reverse_trace import TraceResult
@@ -51,6 +52,8 @@ class RankedAction(BaseModel):
     risk_penalty: float
     score: float
     decoy: bool = False
+    release_p50_h: float | None = None   # hours from now until funds release, finite samples only
+    release_p90_h: float | None = None
 
 
 def build_options(tl: Timeline, trace: TraceResult, tools: set[str]) -> list[Option]:
@@ -107,7 +110,11 @@ def rank(
     for o in build_options(tl, trace, tools):
         permitted, feasible, reason = _feasibility(o, tl, tools)
         submit = "submit_dispute_evidence" in o.steps
-        pm = p_miss(release_hours(tl, trace, submit, nz, p), due_hours) if obligation_present else 0.0
+        rel = release_hours(tl, trace, submit, nz, p)
+        pm = p_miss(rel, due_hours) if obligation_present else 0.0
+        fin = rel[np.isfinite(rel)]
+        p50 = round(float(np.percentile(fin, 50)), 1) if len(fin) >= 0.5 * len(rel) else None
+        p90 = round(float(np.percentile(fin, 90)), 1) if len(fin) >= 0.9 * len(rel) else None
         mit = notice_mit if "send_supplier_notice" in o.steps else 0.0
         harm = pm * harm_weight * (1 - mit)
         cost = sum(p["action_costs"].get(s, 0.0) for s in o.steps)
@@ -119,6 +126,7 @@ def rank(
             id=o.id, label=o.label, steps=o.steps, tier=o.tier, permitted=permitted, feasible=feasible,
             reason=reason, p_miss=round(pm, 4), expected_harm=round(harm, 4), cost=round(cost, 4),
             risk_penalty=round(risk, 4), score=round(score, 4) if o.steps else 0.0, decoy=o.decoy,
+            release_p50_h=p50, release_p90_h=p90,
         ))
     out.sort(key=lambda r: (-r.score, r.id))
     return out
