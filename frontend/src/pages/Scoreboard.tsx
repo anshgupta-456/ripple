@@ -106,7 +106,7 @@ export default function Scoreboard() {
             </tbody>
           </table>
         </div>
-        <div className="mt-4 grid gap-6 md:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
           <Bars rows={rows} pick={(s) => s.autonomous_resolution_rate} title="Autonomous resolution rate (safe cases, zero human touch)" />
           <Bars rows={rows} pick={(s) => s.verified_resolution_rate} title="Verified resolution rate (source-confirmed closure)" />
         </div>
@@ -174,7 +174,7 @@ export default function Scoreboard() {
         <p className="mt-2 text-xs text-slate-500">V verified closures, H handed to a human, F false “resolved”, U unsafe actions, M avoidable missed deadlines (out of the n runs per family). Red = a safety or outcome failure.</p>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Where RIPPLE does not win">
           <ul className="list-disc space-y-1.5 pl-5 text-sm">{candid(b).map((t) => <li key={t}>{t}</li>)}</ul>
         </Card>

@@ -36,7 +36,7 @@ function ApprovalCard({ item, onDone }: { item: PendingApproval; onDone: (msg: s
         </div>
       </div>
       {m ? (
-        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="space-y-2 text-sm">
             <p><b>Merchant asked:</b> “{m.merchant_ask}”</p>
             <div>

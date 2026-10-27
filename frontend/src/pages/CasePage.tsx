@@ -45,8 +45,8 @@ export default function CasePage({ sid }: { sid: string }) {
       <ErrorNote text={err} />
       {c && c.unsafe.length > 0 && <ErrorNote text={`Independent audit found ${c.unsafe.length} unsafe tool call(s): ${c.unsafe.map((u) => u.kind).join(", ")}`} />}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="min-w-0 space-y-4">
           <ChatPanel c={c} inbound={st?.scenario.inbound.text ?? ""} onSend={(t) => act(() => api.caseMessage(t, sid))}
             onConsent={(h, a) => act(() => api.caseConsent(h, a, sid))} />
           <Card title="Agent steps">
@@ -57,7 +57,7 @@ export default function CasePage({ sid }: { sid: string }) {
           </Card>
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <Card title="Context">{st ? <ContextPanel world={st.world} events={events} /> : <p className="text-sm text-slate-500">Loading…</p>}</Card>
 
           <Card title="Traced cause" right={<Btn onClick={reanalyze} title="Re-run the engine on the current world state (takes no action)">Re-analyze now</Btn>}>
@@ -93,7 +93,7 @@ export default function CasePage({ sid }: { sid: string }) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="State ladder">
           <StateLadder plan={c?.plan ?? []} />
           {c?.resolution && (

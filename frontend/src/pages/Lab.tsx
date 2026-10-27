@@ -122,7 +122,7 @@ export default function Lab() {
           <Card>
             <p className="text-sm"><b>Situation:</b> {res.description}. <b>Merchant says:</b> <span className="italic">“{res.message}”</span>{res.custom_message && <span className="ml-2 text-xs text-slate-500">(your message)</span>}</p>
           </Card>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {["C", "E"].map((k) => res.systems[k] && <SystemPanel key={k} s={res.systems[k]} visible={vis} total={total} />)}
           </div>
           <p className="text-xs text-slate-500">Both systems act on identical worlds through identical tools. Verdicts come from an independent auditor that reads the tool-layer log and the source's own events, not from what either system says about itself. System C is a deterministic stand-in for a tool-calling LLM agent.</p>

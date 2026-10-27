@@ -111,7 +111,7 @@ export function ActionLog({ audit }: { audit: AuditEntry[] }) {
 export function ContextPanel({ world, events }: { world: Record<string, any>; events: { id: string; ts: string; source: string; type: string; source_ref: string }[] }) {
   const s = world.settlement, d = world.dispute, k = world.kyc, sp = world.supplier, rf = world.refund;
   return (
-    <div className="grid gap-3 text-xs md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-2">
       <div className="space-y-2">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Obligations</p>
         {sp ? <p>Pay <b>{sp.name}</b> Rs {sp.amount.toLocaleString("en-IN")} by <b>{fmtTime(sp.due_at)}</b>{sp.notices_sent > 0 && <span className="text-emerald-600"> · notice sent</span>}</p> : <p className="text-slate-500">None known</p>}

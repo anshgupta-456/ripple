@@ -11,7 +11,8 @@ Plan: [RIPPLE_MVP_BUILD_PLAN.md](RIPPLE_MVP_BUILD_PLAN.md)
 - Phase 3 done: action firewall (`config/policy.yaml`), hash-bound single-use approvals (analyst only), merchant consent, content guards, idempotent executor with timeout reconciliation, rule-based verifier, audit log, 44-case adversarial suite (zero unsafe, with a mutation check proving it can fail). API: `/api/actions/propose|execute`, `/api/approvals/issue`, `/api/consents/issue`, `/api/audit`, `/api/adversarial/run`.
 - Phase 4 done: intake (rules + optional cached LLM, Hindi/English/Hinglish), fact-bound replies in three languages, evidence bundle, analyst memo, orchestrator loop with multi-turn follow-ups, attack tripwire, case API (`/api/case/message|decide|consent`), chat + approval-card UI.
 - Phase 5 done: 12 scenario families, baselines A-D plus full RIPPLE (E), seeded runner, metrics with Wilson CIs, independent tool-layer policy auditor, config frozen at tag `frozen-v1`, scored results in `data/results/bench_frozen-v1.json`, scoreboard card in the UI. Protocol and **disclosures**: [docs/BENCHMARK.md](docs/BENCHMARK.md).
-- Next: Phase 6 (full dashboard: Ops Console, Case Workspace, Approvals, Scoreboard, Lab with System C vs RIPPLE split view and chaos panel).
+- Phase 6 done: full dashboard. **Ops Console** (live queue, KPIs, simulate a merchant message), **Case** page (chat, source context, trace graph with the decoy dashed, ranked actions incl. do-nothing, Why? drawer, state ladder, audit log), **Approvals** (one-tap card, bundle edit changes the action hash), **Scoreboard** (metrics with CIs, per-family wins/losses, assumptions, disclosures), **Lab** (System C vs RIPPLE on the same world, chaos panel, judge-typed attacks, approval replay). Click-by-click script: [docs/DEMO.md](docs/DEMO.md).
+- Next: polish and presentation (deck, rehearsal, backup video). Optional: live-LLM version of System C, more families.
 
 ## Run
 ```
