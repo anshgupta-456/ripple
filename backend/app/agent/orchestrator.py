@@ -375,6 +375,29 @@ class Orchestrator:
         self._step("Analyst approved", f"{approver}: {p.label}")
         return self._run(p)
 
+    def edit_plan_action(self, action_hash: str, docs: list[str]) -> CaseState:
+        """Analyst edits the evidence bundle. A different bundle is a different action hash, so any earlier
+        approval no longer applies and a fresh approval is required."""
+        p = self._find(action_hash, "awaiting_approval")
+        if p.action.type != "submit_dispute_evidence":
+            raise ValueError("only evidence bundles can be edited")
+        new = Action(case_id=self.s.case_id, type=p.action.type, params={**p.action.params, "docs": list(docs)})
+        d = self.fw.check(new, self._ctx())
+        if d.code in ("bad_params", "out_of_scope", "content_blocked", "hash_tamper"):
+            raise ValueError(d.reason)
+        old = p.action.hash
+        p.action, p.label = new, "Submit dispute evidence (edited)"
+        self.audit.add(self.w.now, "approval", case_id=self.s.case_id, action_hash=new.hash, outcome="edited",
+                       old_hash=old, docs=list(docs))
+        self._step("Analyst edited the evidence bundle", f"{len(docs)} document(s); action hash changed, fresh approval needed")
+        if self.s.memo:
+            for a in self.s.memo.proposed_actions:
+                if a.get("hash") == old:
+                    a["hash"], a["label"] = new.hash, p.label
+        if self.s.bundle:
+            self.s.bundle = self.s.bundle.model_copy(update={"docs": list(docs)})
+        return self.s
+
     def merchant_consent(self, action_hash: str, accept: bool) -> CaseState:
         p = self._find(action_hash, "awaiting_consent")
         if not accept:
